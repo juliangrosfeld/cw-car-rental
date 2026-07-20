@@ -111,3 +111,85 @@
     border-color: var(--hf-color-border-default);
   }
 }
+
+/* ================================================================== */
+/* CW Car Rental — brand token layer (design-brief.md is the source)  */
+/* Overrides the scaffold's dark app defaults with the CW light theme. */
+/* ================================================================== */
+
+@theme {
+  --color-cw-teal: #118c8c;
+  --color-cw-teal-dark: #0c6b6b;
+  --color-cw-teal-soft: #e3f2f0;
+  --color-cw-navy: #023047;
+  --color-cw-ink: #1c3a4a;
+  --color-cw-peach: #ffb085;
+  --color-cw-peach-soft: #fff0e5;
+  --color-cw-mint: #bad9ce;
+  --color-cw-mint-soft: #eef7f3;
+  --color-cw-yellow: #f2bb16;
+  --color-cw-yellow-soft: #fdf3d3;
+  --color-cw-pink: #ff99d8;
+  --color-cw-pink-soft: #ffeaf7;
+  --font-display: "Montserrat", Arial, Helvetica, sans-serif;
+  --font-body: "Open Sans", Arial, Helvetica, sans-serif;
+}
+
+@layer base {
+  html:not([data-theme]) {
+    background-color: #ffffff;
+    color: var(--color-cw-ink);
+    color-scheme: light;
+  }
+  html:not([data-theme]) body {
+    background-color: #ffffff;
+    color: var(--color-cw-ink);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+  }
+  html:not([data-theme]) ::selection {
+    background: var(--color-cw-teal);
+    color: #ffffff;
+  }
+}
+
+@layer components {
+  /* Soft brand shadows: navy contact + teal ambient. One radius scale. */
+  .cw-shadow-soft {
+    box-shadow:
+      0 2px 8px rgba(2, 48, 71, 0.05),
+      0 10px 30px rgba(17, 140, 140, 0.1);
+  }
+  .cw-shadow-lift {
+    box-shadow:
+      0 6px 16px rgba(2, 48, 71, 0.08),
+      0 18px 44px rgba(17, 140, 140, 0.16);
+  }
+
+  /* Waypoint hairline: the journey motif used as section punctuation. */
+  .cw-waypoint {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .cw-waypoint::before,
+  .cw-waypoint::after {
+    content: "";
+    height: 1px;
+    width: 2.5rem;
+    background: currentColor;
+    opacity: 0.45;
+  }
+}
+
+/* Reduced motion: global kill switch. Components also gate their own JS. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
