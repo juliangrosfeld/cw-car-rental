@@ -117,7 +117,7 @@ function FleetCard({ vehicle, big = false }: { vehicle: Vehicle; big?: boolean }
         <img
           src={vehicle.photo}
           alt={`${vehicle.name}, ${vehicle.colorNote.toLowerCase()}`}
-          loading="lazy"
+          loading={big ? 'eager' : 'lazy'}
           className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.03]"
         />
       </div>

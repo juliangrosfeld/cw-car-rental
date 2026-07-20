@@ -94,6 +94,8 @@ function buildHead(meta: AppMeta) {
     links: [
       { rel: "stylesheet", href: appCss },
       { rel: "icon", href: favicon },
+      { rel: "icon", href: "/favicon.ico", sizes: "32x32" },
+      { rel: "icon", href: "/assets/head/favicon-16.png", sizes: "16x16", type: "image/png" },
       { rel: "apple-touch-icon", href: "/assets/head/apple-touch-icon.png" },
       { rel: "manifest", href: "/site.webmanifest" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },

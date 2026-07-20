@@ -111,7 +111,15 @@ function ScrollHero({ showCanvas, staticCamera }: { showCanvas: boolean; staticC
   }
 
   return (
-    <section ref={trackRef} className="relative h-[400vh]">
+    <section
+      ref={trackRef}
+      className="relative h-[400vh]"
+      style={{
+        // The 300vh of track below the sticky viewport: keep it in the same
+        // atmosphere so full-page renders show a wash, never a dead band.
+        background: 'linear-gradient(180deg, #cdf0ea 0%, #9fdcd4 34%, #dff2ee 72%, #ffffff 100%)',
+      }}
+    >
       <div className="sticky top-0 h-dvh overflow-hidden">
         <Atmosphere />
         {showCanvas && (

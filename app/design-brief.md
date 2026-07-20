@@ -61,11 +61,12 @@ centered statement, mint hairline rhythm · 3 Fleet, diagonal staggered masonry,
 top-left lead, stagger-rise reveal + gentle hover tilt · 4 Values, D2
 sticky color chapters · 5 Founder teaser, off-grid offset with layered crop
 frames, peach accent · 6 Footer, navy dusk, WhatsApp banner CTA.
-**About (4 + footer):** 1 Story opener, editorial offset (Clay, baseball →
+**About (5 + footer):** 1 Story opener, editorial offset (Clay, baseball →
 keys) · 2 Why CW, centered statement (positioning line) · 3 Vision/Mission,
 alternating editorial blocks · 4 Island waypoints, gallery-led strip
 (Westpunt, Shete Boka, Willemstad) using real island color, code-built
-atmosphere. Shared dusk footer.
+atmosphere · 5 Ready band, one line + the booking CTA (added during build:
+the page needed a close; brief updated to match). Shared dusk footer.
 **Booking (wizard shell):** progress rail as journey waypoints (spine), one
 step card at a time: dates+pickup → cars (availability-filtered, transmission
 chip on every card) → details → review with full price breakdown → Sentoo pay

@@ -19,7 +19,6 @@ export default function FounderTeaser() {
           <img
             src={flagship.photo}
             alt="The red Hyundai Venue, CW's flagship"
-            loading="lazy"
             className="cw-shadow-lift relative rounded-xl"
           />
         </div>

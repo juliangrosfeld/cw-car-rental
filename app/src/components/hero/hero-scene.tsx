@@ -115,7 +115,6 @@ function IslandWorld() {
       <Palm position={[-5.6, 0, -3.2]} lean={0.12} height={2.7} />
       <Palm position={[10.5, 0, -3.5]} lean={-0.09} height={3.1} />
       <Palm position={[-8.5, 0, 4.5]} lean={0.16} height={2.4} />
-      <Willemstad />
     </>
   )
 }
@@ -249,31 +248,6 @@ function Palm({
           </group>
         ))}
       </group>
-    </group>
-  )
-}
-
-/** A whisper of Willemstad on the horizon: tiny pastel facades in the haze. */
-function Willemstad() {
-  const houses = useMemo(() => {
-    const tints = ['#ffb085', '#f2bb16', '#bad9ce', '#ff99d8', '#f4efe6', '#ffb085']
-    return tints.map((color, i) => ({
-      color,
-      x: -12 + i * 4.6,
-      z: -42 - (i % 3) * 3,
-      w: 2.4 + (i % 2) * 1.1,
-      h: 1.4 + ((i * 7) % 5) * 0.45,
-    }))
-  }, [])
-
-  return (
-    <group>
-      {houses.map((house, i) => (
-        <mesh key={i} position={[house.x, house.h / 2, house.z]}>
-          <boxGeometry args={[house.w, house.h, 1.6]} />
-          <meshStandardMaterial color={house.color} roughness={0.9} />
-        </mesh>
-      ))}
     </group>
   )
 }
