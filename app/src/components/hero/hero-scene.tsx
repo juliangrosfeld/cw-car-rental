@@ -1,9 +1,9 @@
-import { useMemo, useRef } from 'react'
+import { Suspense, useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import { Environment, Lightformer } from '@react-three/drei'
 import * as THREE from 'three'
 import type { MotionValue } from 'framer-motion'
-import CarModel from './car-model'
+import VenueCar from './venue-car'
 
 interface HeroSceneProps {
   /** Scroll progress 0..1 — required when mode is "scroll". */
@@ -95,7 +95,9 @@ export default function HeroScene({ progress, mode }: HeroSceneProps) {
       <IslandWorld />
 
       <group ref={carGroup}>
-        <CarModel />
+        <Suspense fallback={null}>
+          <VenueCar />
+        </Suspense>
         <GroundShadow />
       </group>
     </>
