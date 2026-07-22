@@ -1,6 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
 import Hero from "../components/hero/hero";
-import BonBini from "../components/landing/bon-bini";
 import FleetSection from "../components/landing/fleet-section";
 import ValuesStack from "../components/landing/values-stack";
 import FounderTeaser from "../components/landing/founder-teaser";
@@ -15,7 +14,6 @@ function Index() {
   return (
     <main>
       <Hero />
-      <BonBini />
       <FleetSection />
       <ValuesStack />
       <FounderTeaser />

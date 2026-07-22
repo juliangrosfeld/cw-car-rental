@@ -7,7 +7,7 @@ import { CONTACT, POSITIONING } from '../../content/brand'
  */
 export default function Footer() {
   return (
-    <footer className="bg-cw-navy text-white">
+    <footer id="contact" className="bg-cw-navy text-white scroll-mt-[72px]">
       {/* WhatsApp band. Garment: the whole strip shifts grade and shears a
           touch on hover; press flickers mint toward pink. */}
       <a

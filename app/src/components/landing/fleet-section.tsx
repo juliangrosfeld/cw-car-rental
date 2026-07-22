@@ -4,10 +4,12 @@ import { motion, useMotionValue, useSpring } from 'framer-motion'
 import { FLEET, type Vehicle } from '../../content/brand'
 
 /**
- * The fleet, board 2's diagonal staggered masonry: flagship large on the
- * left, the others stepping down at offset heights. Cards rise into place on
- * scroll (transform only, screenshot-safe) and tilt gently under a fine
- * pointer.
+ * The fleet, a single aligned grid: five identical cards on an even gutter.
+ * Every card shares the same image crop, the same body layout and the same
+ * height, so nothing steps out of line. The flagship reads through a badge
+ * pinned over its photo (an overlay), never through a taller or wider card, so
+ * it can't skew the grid. Cards rise on scroll (transform only, screenshot
+ * safe) and tilt gently under a fine pointer.
  */
 
 const ACCENT_BAR: Record<Vehicle['accent'], string> = {
@@ -47,39 +49,33 @@ export default function FleetSection() {
     }
   }, [])
 
-  const [flagship, ...rest] = FLEET
-
   return (
-    <section id="fleet" ref={sectionRef} className="bg-cw-mint-soft">
+    <section id="fleet" ref={sectionRef} className="scroll-mt-[72px] bg-cw-mint-soft">
       <div className="mx-auto max-w-[1160px] px-5 py-24 md:px-8 md:py-32">
-        <div className="max-w-[560px]">
-          <h2 className="font-display text-[clamp(2rem,4vw,3.2rem)] font-extrabold tracking-tight text-cw-navy">
-            Pick your ride
+        <div className="mx-auto max-w-[820px] text-center">
+          <p className="cw-waypoint justify-center text-cw-teal">
+            <span className="h-2 w-2 rounded-full bg-cw-mint" />
+          </p>
+          <h2 className="mt-6 font-display text-[clamp(1.9rem,3.6vw,3rem)] font-extrabold leading-tight tracking-tight text-cw-navy">
+            No counters. No queues. Just keys.
           </h2>
-          <p className="mt-4 text-base leading-relaxed text-cw-ink/85 md:text-lg">
-            Five cars, zero nonsense. All automatic, all checked before every handover.
+          <p className="mx-auto mt-5 max-w-[52ch] text-base leading-relaxed text-cw-ink/85 md:text-lg">
+            You land, we meet you, you drive. Booking takes two minutes, and a real person answers
+            every message.
           </p>
         </div>
 
-        <div className="mt-14 grid gap-6 md:grid-cols-[1.2fr_0.8fr_0.8fr]">
-          <div>
-            <FleetCard vehicle={flagship} big />
-          </div>
-          <div className="flex flex-col gap-6 md:mt-12">
-            <FleetCard vehicle={rest[0]} />
-            <FleetCard vehicle={rest[1]} />
-          </div>
-          <div className="flex flex-col gap-6 md:mt-24">
-            <FleetCard vehicle={rest[2]} />
-            <FleetCard vehicle={rest[3]} />
-          </div>
+        <div className="mt-16 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {FLEET.map((vehicle, i) => (
+            <FleetCard key={vehicle.id} vehicle={vehicle} eager={i === 0} />
+          ))}
         </div>
       </div>
     </section>
   )
 }
 
-function FleetCard({ vehicle, big = false }: { vehicle: Vehicle; big?: boolean }) {
+function FleetCard({ vehicle, eager = false }: { vehicle: Vehicle; eager?: boolean }) {
   const [tiltOn, setTiltOn] = useState(false)
   const rx = useMotionValue(0)
   const ry = useMotionValue(0)
@@ -113,37 +109,40 @@ function FleetCard({ vehicle, big = false }: { vehicle: Vehicle; big?: boolean }
       style={tiltOn ? { rotateX: srx, rotateY: sry, transformPerspective: 900 } : undefined}
       className="group cw-shadow-soft flex h-full flex-col overflow-hidden rounded-xl bg-white transition-shadow duration-300 hover:cw-shadow-lift"
     >
-      <div className={`overflow-hidden bg-cw-teal-soft ${big ? 'aspect-[4/3]' : 'aspect-[16/10]'}`}>
+      {/* Identical crop on every card; the flagship badge is an overlay so it
+          never adds height or shifts the header below it. */}
+      <div className="relative aspect-[16/10] overflow-hidden bg-cw-teal-soft">
         <img
           src={vehicle.photo}
           alt={`${vehicle.name}, ${vehicle.colorNote.toLowerCase()}`}
-          loading={big ? 'eager' : 'lazy'}
+          loading={eager ? 'eager' : 'lazy'}
           className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.03]"
         />
+        {vehicle.flagship && (
+          <span className="absolute left-3 top-3 rounded-full bg-cw-yellow px-3 py-1 font-display text-xs font-bold text-cw-navy shadow-[0_2px_10px_rgba(2,48,71,0.18)]">
+            The flagship
+          </span>
+        )}
       </div>
-      <div className={`flex flex-1 flex-col ${big ? 'p-7' : 'p-5'}`}>
+
+      <div className="flex flex-1 flex-col p-5">
         <div className="flex items-baseline justify-between gap-3">
-          <h3 className={`font-display font-bold text-cw-navy ${big ? 'text-2xl' : 'text-lg'}`}>
-            {vehicle.name}
-            <span className="ml-2 text-sm font-semibold text-cw-ink/60">{vehicle.colorNote}</span>
-          </h3>
-          {vehicle.flagship && (
-            <span className="rounded-full bg-cw-yellow px-3 py-1 font-display text-xs font-bold text-cw-navy">
-              The flagship
-            </span>
-          )}
+          <h3 className="font-display text-lg font-bold text-cw-navy">{vehicle.name}</h3>
+          <span className="shrink-0 text-sm font-semibold text-cw-ink/60">{vehicle.colorNote}</span>
         </div>
-        <p className="mt-2 text-sm leading-relaxed text-cw-ink/80">{vehicle.tagline}</p>
+        <p className="mt-2 line-clamp-2 min-h-[2.6em] text-sm leading-relaxed text-cw-ink/80">
+          {vehicle.tagline}
+        </p>
 
         <div className="mt-auto pt-5">
           <div className="flex items-center justify-between gap-3">
             <p className="text-cw-ink/85">
-              <span className={`font-display font-extrabold text-cw-navy ${big ? 'text-3xl' : 'text-xl'}`}>
+              <span className="font-display text-xl font-extrabold text-cw-navy">
                 ${vehicle.pricePerDay}
               </span>{' '}
               <span className="text-sm">per day</span>
             </p>
-            <span className="rounded-full bg-cw-teal-soft px-3 py-1 text-xs font-semibold text-cw-teal-dark">
+            <span className="shrink-0 rounded-full bg-cw-teal-soft px-3 py-1 text-xs font-semibold text-cw-teal-dark">
               {vehicle.transmission} · {vehicle.seats} seats
             </span>
           </div>

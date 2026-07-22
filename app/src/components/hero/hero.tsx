@@ -47,7 +47,9 @@ export default function Hero() {
   return <ScrollHero showCanvas={client && webgl} staticCamera={reducedMotion} />
 }
 
-/** The Curaçao morning painted in CSS: first paint and the no-WebGL floor. */
+/** The lit gradient sky painted in CSS: first paint and the no-WebGL floor.
+ *  Teal zenith deepening into a warm peach/gold horizon — the same mood the
+ *  WebGL sky renders, so the handoff from CSS to canvas is seamless. */
 function Atmosphere() {
   return (
     <div aria-hidden="true" className="absolute inset-0 overflow-hidden">
@@ -55,14 +57,15 @@ function Atmosphere() {
         className="absolute inset-0"
         style={{
           background:
-            'linear-gradient(180deg, #f2fdfb 0%, #cdf0ea 46%, #9fdcd4 62%, #54bcae 63%, #3da294 100%)',
+            'linear-gradient(180deg, #0e6b72 0%, #2b8d93 24%, #79c4bf 50%, #f4d3a6 82%, #ffcf9c 100%)',
         }}
       />
+      {/* Warm horizon glow, low and to the right — light, not a sun disc. */}
       <div
-        className="absolute -right-[10%] top-[8%] h-[46vw] w-[46vw] rounded-full"
+        className="absolute -right-[6%] bottom-[6%] h-[52vw] w-[52vw] rounded-full"
         style={{
           background:
-            'radial-gradient(circle, rgba(255,245,214,0.85) 0%, rgba(255,233,176,0.28) 40%, rgba(255,233,176,0) 70%)',
+            'radial-gradient(circle, rgba(255,214,158,0.75) 0%, rgba(255,201,143,0.26) 42%, rgba(255,201,143,0) 72%)',
         }}
       />
     </div>

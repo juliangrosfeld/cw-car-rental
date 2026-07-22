@@ -146,17 +146,20 @@ export const PICKUP_LOCATIONS: PickupLocation[] = [
 export const WAYPOINTS = [
   {
     name: 'Westpunt',
-    tint: 'bg-cw-peach-soft',
+    accent: 'peach',
+    image: '/assets/about/westpunt-cw-image.png',
     note: 'Cliff jumps at Playa Forti, grouper lunches at the beach shacks. Take the coast road slow.',
   },
   {
     name: 'Shete Boka',
-    tint: 'bg-cw-yellow-soft',
+    accent: 'yellow',
+    image: '/assets/about/sheteboka-cw-image.png',
     note: 'Seven inlets where the north coast hits back. Boka Tabla thunders after a windy night.',
   },
   {
     name: 'Willemstad',
-    tint: 'bg-cw-mint-soft',
+    accent: 'mint',
+    image: '/assets/about/willemstad-cw-images.png',
     note: 'Punda for the postcard, Otrobanda for the real thing. Park the car, cross the swinging bridge.',
   },
-]
+] as const
