@@ -4,6 +4,7 @@ import {
   Link,
   createRootRouteWithContext,
   useRouter,
+  useRouterState,
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
@@ -185,8 +186,21 @@ function RootShell({ children }: { children: ReactNode }) {
   );
 }
 
+/**
+ * The CRM is a different product living in the same app. Everything below is
+ * marketing chrome — the fixed public nav, the footer, the custom cursor and
+ * Lenis smooth scrolling — and all of it is wrong for a back office: the nav
+ * would cover the admin header, and hijacked scrolling makes a long table
+ * genuinely unpleasant to use. /admin brings its own shell instead.
+ */
+function isAdminPath(pathname: string): boolean {
+  return pathname === "/admin" || pathname.startsWith("/admin/");
+}
+
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const admin = isAdminPath(pathname);
 
   useEffect(() => {
     if (!__HF_DESIGN_INSPECTOR__) {
@@ -206,6 +220,17 @@ function RootComponent() {
         );
       });
   }, []);
+
+  if (admin) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <MotionConfig reducedMotion="user">
+          {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+          <Outlet />
+        </MotionConfig>
+      </QueryClientProvider>
+    );
+  }
 
   return (
     <QueryClientProvider client={queryClient}>

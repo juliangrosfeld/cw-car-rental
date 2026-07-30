@@ -1,14 +1,44 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, MotionConfig, motion } from 'framer-motion'
-import { FLEET, PICKUP_LOCATIONS, type Vehicle } from '../../content/brand'
-import { fmtDay, quote, splitFleet, vehicleFree } from './availability'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { PICKUP_LOCATIONS } from '../../content/brand'
+import {
+  getAvailableCars,
+  getFleetAvailability,
+  submitBooking,
+  type PublicCar,
+} from '../../lib/api/booking.functions'
+import {
+  fmtDay,
+  formatUsd,
+  fromKey,
+  quote,
+  splitFleet,
+  toKey,
+  type BusyRange,
+} from '../../lib/booking/rental'
 import Calendar from './calendar'
 
 /**
  * The 5-step booking wizard (board 4): Dates → Car → Details → Review → Pay.
  * One centered step card under a waypoint progress rail. Dates and car stay
- * editable from any later step without losing progress; payment is UI-only
- * (Sentoo) ahead of the real integration.
+ * editable from any later step without losing progress.
+ *
+ * DATA FLOW — everything here is live.
+ *   getFleetAvailability  one round trip on mount: the bookable fleet plus every
+ *                         occupied date range in the horizon. Powers the
+ *                         calendar's crossed-out days AND the car step's
+ *                         free/taken split, computed client-side for instant
+ *                         feedback as the guest moves dates around.
+ *   getAvailableCars      the server's authoritative answer for the chosen
+ *                         range, fetched on entering the car step so a stale
+ *                         cache cannot offer a car taken thirty seconds ago.
+ *   submitBooking         the only write path. Recomputes the price server-side
+ *                         from the database and returns the confirmation, which
+ *                         the anon key could never read back itself.
+ *
+ * Prices are CENTS end to end (matching the database); formatUsd is the only
+ * place they become dollars.
  */
 
 const STEPS = ['Dates', 'Car', 'Details', 'Review', 'Pay'] as const
@@ -21,25 +51,109 @@ interface Details {
   note: string
 }
 
+type Confirmed = Extract<Awaited<ReturnType<typeof submitBooking>>, { ok: true }>['confirmation']
+
 export default function BookingWizard({ initialCarId }: { initialCarId?: string }) {
+  const queryClient = useQueryClient()
+
   const [step, setStep] = useState(0)
   const [maxReached, setMaxReached] = useState(0)
   const [start, setStart] = useState<Date | undefined>()
   const [end, setEnd] = useState<Date | undefined>()
   const [location, setLocation] = useState(PICKUP_LOCATIONS[0].id)
-  const [carId, setCarId] = useState<string | undefined>(
-    initialCarId && FLEET.some((v) => v.id === initialCarId) ? initialCarId : undefined,
-  )
+  const [carId, setCarId] = useState<string | undefined>()
   const [carNotice, setCarNotice] = useState<string | undefined>()
   const [details, setDetails] = useState<Details>({ name: '', email: '', phone: '', flight: '', note: '' })
   const [errors, setErrors] = useState<Partial<Record<keyof Details, string>>>({})
-  const [payState, setPayState] = useState<'idle' | 'processing' | 'done'>('idle')
+  const [confirmation, setConfirmation] = useState<Confirmed | undefined>()
 
-  const car = useMemo(() => FLEET.find((v) => v.id === carId), [carId])
+  /* ---- live fleet + occupied ranges ---- */
+  const fleetQuery = useQuery({
+    queryKey: ['fleet-availability'],
+    queryFn: () => getFleetAvailability(),
+    staleTime: 60_000,
+  })
+
+  const cars = useMemo<PublicCar[]>(() => fleetQuery.data?.cars ?? [], [fleetQuery.data])
+  const busy = useMemo<BusyRange[]>(() => fleetQuery.data?.busy ?? [], [fleetQuery.data])
+  const carIds = useMemo(() => cars.map((c) => c.id), [cars])
+
+  // Honour ?car= only once the fleet is known, so a stale or bogus id is dropped
+  // rather than carried into the review step.
+  useEffect(() => {
+    if (initialCarId && !carId && cars.some((c) => c.id === initialCarId)) {
+      setCarId(initialCarId)
+    }
+  }, [initialCarId, carId, cars])
+
+  const startKey = start ? toKey(start) : undefined
+  const endKey = end ? toKey(end) : undefined
+  const hasRange = Boolean(startKey && endKey)
+
+  /* ---- server's authoritative availability for the chosen range ---- */
+  const availabilityQuery = useQuery({
+    queryKey: ['available-cars', startKey, endKey],
+    queryFn: () => getAvailableCars({ data: { pickupDate: startKey!, returnDate: endKey! } }),
+    enabled: hasRange && step >= 1,
+    staleTime: 30_000,
+  })
+
+  // Client-side split for instant feedback; replaced by the server's answer the
+  // moment it lands. Both use the same half-open overlap rule.
+  const split = useMemo(() => {
+    if (!startKey || !endKey) return { available: cars, unavailable: [] as PublicCar[] }
+    if (availabilityQuery.data?.ok) {
+      const free = new Set(availabilityQuery.data.cars.map((c) => c.id))
+      return {
+        available: cars.filter((c) => free.has(c.id)),
+        unavailable: cars.filter((c) => !free.has(c.id)),
+      }
+    }
+    return splitFleet(cars, busy, startKey, endKey)
+  }, [cars, busy, startKey, endKey, availabilityQuery.data])
+
+  const car = useMemo(() => cars.find((c) => c.id === carId), [cars, carId])
   const locationLabel = PICKUP_LOCATIONS.find((l) => l.id === location)?.label ?? ''
+  const currentQuote =
+    car && startKey && endKey ? quote(car.dailyRateCents, startKey, endKey) : undefined
+
+  /* ---- the write ---- */
+  const booking = useMutation({
+    mutationFn: () =>
+      submitBooking({
+        data: {
+          pickupDate: startKey!,
+          returnDate: endKey!,
+          carId: carId!,
+          fullName: details.name,
+          email: details.email,
+          phone: details.phone,
+          pickupLocation: locationLabel,
+          returnLocation: locationLabel,
+          flightNumber: details.flight || null,
+          specialRequests: details.note || null,
+        },
+      }),
+    onSuccess: (result) => {
+      if (result.ok) {
+        setConfirmation(result.confirmation)
+        // The fleet just got less available — make sure a second booking in the
+        // same session sees it.
+        void queryClient.invalidateQueries({ queryKey: ['fleet-availability'] })
+        void queryClient.invalidateQueries({ queryKey: ['available-cars'] })
+        return
+      }
+      // Lost the race, or the car went off the road. Send them back to pick again.
+      setCarId(undefined)
+      setCarNotice(result.message)
+      void queryClient.invalidateQueries({ queryKey: ['fleet-availability'] })
+      void queryClient.invalidateQueries({ queryKey: ['available-cars'] })
+      setStep(1)
+    },
+  })
 
   const goTo = (target: number) => {
-    if (payState === 'done') return
+    if (confirmation) return
     if (target <= maxReached) setStep(target)
   }
   const advance = (target: number) => {
@@ -48,9 +162,9 @@ export default function BookingWizard({ initialCarId }: { initialCarId?: string 
   }
 
   const continueFromDates = () => {
-    if (!start || !end) return
+    if (!startKey || !endKey) return
     // Dates changed under a chosen car: keep progress, flag the car step.
-    if (carId && !vehicleFree(carId, start, end)) {
+    if (carId && !split.available.some((c) => c.id === carId)) {
       setCarId(undefined)
       setCarNotice('Your earlier pick is booked for these dates. Choose another ride.')
     }
@@ -71,31 +185,41 @@ export default function BookingWizard({ initialCarId }: { initialCarId?: string 
   return (
     <MotionConfig reducedMotion="user">
       <div className="mx-auto w-full max-w-[760px]">
-        <ProgressRail step={step} maxReached={maxReached} done={payState === 'done'} onSelect={goTo} />
+        <ProgressRail step={step} maxReached={maxReached} done={!!confirmation} onSelect={goTo} />
 
-        {car && start && end && payState !== 'done' && (
+        {car && start && end && currentQuote && !confirmation && (
           <p className="mt-5 text-center text-sm text-cw-ink/70">
-            {car.name} · {fmtDay(start)} → {fmtDay(end)} · ${quote(car, start, end).total} total
+            {car.model} · {fmtDay(start)} → {fmtDay(end)} ·{' '}
+            {formatUsd(currentQuote.totalCents)} total
+          </p>
+        )}
+
+        {fleetQuery.isError && (
+          <p className="mt-5 rounded-xl bg-[#fdeceb] px-4 py-3 text-center text-sm font-semibold text-[#b3271d]">
+            We could not reach our booking system. Please refresh, or reach us on WhatsApp.
           </p>
         )}
 
         <div className="relative mt-8">
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
-              key={payState === 'done' ? 'done' : step}
+              key={confirmation ? 'done' : step}
               initial={{ opacity: 0, y: 18 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -14 }}
               transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
               className="cw-shadow-soft rounded-xl bg-white p-6 md:p-9"
             >
-              {payState === 'done' && car && start && end ? (
-                <Confirmation car={car} start={start} end={end} details={details} locationLabel={locationLabel} />
+              {confirmation ? (
+                <Confirmation confirmation={confirmation} />
               ) : step === 0 ? (
                 <DatesStep
                   start={start}
                   end={end}
                   location={location}
+                  busy={busy}
+                  carIds={carIds}
+                  loading={fleetQuery.isPending}
                   onDates={(s, e) => {
                     setStart(s)
                     setEnd(e)
@@ -103,12 +227,17 @@ export default function BookingWizard({ initialCarId }: { initialCarId?: string 
                   onLocation={setLocation}
                   onContinue={continueFromDates}
                 />
-              ) : step === 1 && start && end ? (
+              ) : step === 1 && start && end && startKey && endKey ? (
                 <CarStep
                   start={start}
                   end={end}
+                  pickupDate={startKey}
+                  returnDate={endKey}
+                  available={split.available}
+                  unavailable={split.unavailable}
                   carId={carId}
                   notice={carNotice}
+                  verifying={availabilityQuery.isFetching}
                   onSelect={(id) => {
                     setCarId(id)
                     setCarNotice(undefined)
@@ -122,26 +251,26 @@ export default function BookingWizard({ initialCarId }: { initialCarId?: string 
                   onChange={(patch) => setDetails((d) => ({ ...d, ...patch }))}
                   onContinue={continueFromDetails}
                 />
-              ) : step === 3 && car && start && end ? (
+              ) : step === 3 && car && start && end && currentQuote ? (
                 <ReviewStep
                   car={car}
                   start={start}
                   end={end}
+                  quote={currentQuote}
                   locationLabel={locationLabel}
                   details={details}
                   onEdit={goTo}
                   onContinue={() => advance(4)}
                 />
-              ) : step === 4 && car && start && end ? (
+              ) : step === 4 && car && start && end && currentQuote ? (
                 <PayStep
                   car={car}
                   start={start}
                   end={end}
-                  processing={payState === 'processing'}
-                  onPay={() => {
-                    setPayState('processing')
-                    window.setTimeout(() => setPayState('done'), 1400)
-                  }}
+                  quote={currentQuote}
+                  processing={booking.isPending}
+                  error={booking.isError ? 'Something went wrong on our side. Please try again.' : undefined}
+                  onPay={() => booking.mutate()}
                 />
               ) : (
                 <MissingState onRestart={() => setStep(0)} />
@@ -265,6 +394,9 @@ function DatesStep({
   start,
   end,
   location,
+  busy,
+  carIds,
+  loading,
   onDates,
   onLocation,
   onContinue,
@@ -272,6 +404,9 @@ function DatesStep({
   start?: Date
   end?: Date
   location: string
+  busy: readonly BusyRange[]
+  carIds: readonly string[]
+  loading: boolean
   onDates: (s?: Date, e?: Date) => void
   onLocation: (id: string) => void
   onContinue: () => void
@@ -283,7 +418,9 @@ function DatesStep({
         sub="Pick your days, tell us where to hand you the keys."
       />
       <div className="mt-7 grid gap-8 md:grid-cols-[1.2fr_1fr]">
-        <Calendar start={start} end={end} onChange={onDates} />
+        <div className={loading ? 'pointer-events-none opacity-50' : undefined}>
+          <Calendar start={start} end={end} onChange={onDates} busy={busy} carIds={carIds} />
+        </div>
         <div>
           <label htmlFor="pickup-location" className="block font-display text-sm font-bold text-cw-navy">
             Pickup location
@@ -302,7 +439,9 @@ function DatesStep({
           </select>
 
           <div className="mt-6 rounded-xl bg-cw-mint-soft p-4 text-sm leading-relaxed text-cw-ink/80">
-            {start && end ? (
+            {loading ? (
+              'Checking which days are free…'
+            ) : start && end ? (
               <>
                 <span className="font-semibold text-cw-navy">{fmtDay(start)}</span> pickup,{' '}
                 <span className="font-semibold text-cw-navy">{fmtDay(end)}</span> drop-off.
@@ -315,7 +454,7 @@ function DatesStep({
           </div>
         </div>
       </div>
-      <ContinueButton label="Continue" disabled={!start || !end} onClick={onContinue} />
+      <ContinueButton label="Continue" disabled={!start || !end || loading} onClick={onContinue} />
     </div>
   )
 }
@@ -323,20 +462,28 @@ function DatesStep({
 function CarStep({
   start,
   end,
+  pickupDate,
+  returnDate,
+  available,
+  unavailable,
   carId,
   notice,
+  verifying,
   onSelect,
   onContinue,
 }: {
   start: Date
   end: Date
+  pickupDate: string
+  returnDate: string
+  available: PublicCar[]
+  unavailable: PublicCar[]
   carId?: string
   notice?: string
+  verifying: boolean
   onSelect: (id: string) => void
   onContinue: () => void
 }) {
-  const { available, unavailable } = splitFleet(start, end)
-
   return (
     <div>
       <StepHeading title="Pick your ride" sub={`Free for ${fmtDay(start)} → ${fmtDay(end)}.`} />
@@ -345,19 +492,29 @@ function CarStep({
           {notice}
         </p>
       )}
+      {verifying && (
+        <p className="mt-4 text-sm text-cw-ink/60">Confirming what's still free…</p>
+      )}
 
-      <div className="mt-6 grid gap-4 sm:grid-cols-2">
-        {available.map((v) => (
-          <CarOption
-            key={v.id}
-            vehicle={v}
-            start={start}
-            end={end}
-            selected={v.id === carId}
-            onSelect={() => onSelect(v.id)}
-          />
-        ))}
-      </div>
+      {available.length === 0 && !verifying ? (
+        <p className="mt-6 rounded-xl bg-cw-yellow-soft px-4 py-4 text-sm font-semibold text-cw-navy">
+          Every car is out for those dates. Try a different range, or message us on WhatsApp —
+          we sometimes have a car back early.
+        </p>
+      ) : (
+        <div className="mt-6 grid gap-4 sm:grid-cols-2">
+          {available.map((v) => (
+            <CarOption
+              key={v.id}
+              car={v}
+              pickupDate={pickupDate}
+              returnDate={returnDate}
+              selected={v.id === carId}
+              onSelect={() => onSelect(v.id)}
+            />
+          ))}
+        </div>
+      )}
 
       {unavailable.length > 0 && (
         <div className="mt-8">
@@ -366,10 +523,10 @@ function CarStep({
             {unavailable.map((v) => (
               <div key={v.id} className="rounded-xl border-2 border-cw-navy/8 bg-cw-mint-soft/50 p-4 opacity-60">
                 <div className="flex items-center gap-3">
-                  <img src={v.photo} alt="" loading="lazy" className="h-12 w-16 rounded-lg object-cover grayscale" />
+                  <img src={v.photoUrl} alt="" loading="lazy" className="h-12 w-16 rounded-lg object-cover grayscale" />
                   <div>
                     <p className="font-display text-sm font-bold text-cw-navy">
-                      {v.name} <span className="font-semibold text-cw-ink/60">{v.colorNote}</span>
+                      {v.model} <span className="font-semibold text-cw-ink/60">{v.color}</span>
                     </p>
                     <p className="text-xs text-cw-ink/60">Booked for your dates</p>
                   </div>
@@ -386,19 +543,19 @@ function CarStep({
 }
 
 function CarOption({
-  vehicle,
-  start,
-  end,
+  car,
+  pickupDate,
+  returnDate,
   selected,
   onSelect,
 }: {
-  vehicle: Vehicle
-  start: Date
-  end: Date
+  car: PublicCar
+  pickupDate: string
+  returnDate: string
   selected: boolean
   onSelect: () => void
 }) {
-  const q = quote(vehicle, start, end)
+  const q = quote(car.dailyRateCents, pickupDate, returnDate)
   return (
     <button
       type="button"
@@ -411,26 +568,26 @@ function CarOption({
       }`}
     >
       <div className="overflow-hidden rounded-lg bg-cw-mint-soft">
-        <img src={vehicle.photo} alt={`${vehicle.name}, ${vehicle.colorNote.toLowerCase()}`} loading="lazy" className="aspect-[16/9] w-full object-cover" />
+        <img src={car.photoUrl} alt={`${car.model}, ${car.color.toLowerCase()}`} loading="lazy" className="aspect-[16/9] w-full object-cover" />
       </div>
       <div className="mt-3 flex items-start justify-between gap-2">
         <div>
           <p className="font-display text-[15px] font-bold text-cw-navy">
-            {vehicle.name} <span className="text-sm font-semibold text-cw-ink/60">{vehicle.colorNote}</span>
+            {car.model} <span className="text-sm font-semibold text-cw-ink/60">{car.color}</span>
           </p>
           <p className="mt-1 flex flex-wrap gap-1.5">
             <span className="rounded-full bg-white px-2.5 py-0.5 text-xs font-semibold text-cw-teal-dark ring-1 ring-cw-teal/25">
-              {vehicle.transmission}
+              {car.transmission}
             </span>
             <span className="rounded-full bg-white px-2.5 py-0.5 text-xs font-semibold text-cw-teal-dark ring-1 ring-cw-teal/25">
-              {vehicle.seats} seats
+              {car.seats} seats
             </span>
           </p>
         </div>
         <p className="shrink-0 text-right">
-          <span className="font-display text-lg font-extrabold text-cw-navy">${q.total}</span>
+          <span className="font-display text-lg font-extrabold text-cw-navy">{formatUsd(q.totalCents)}</span>
           <span className="block text-xs text-cw-ink/60">
-            ${q.perDay} × {q.days} {q.days === 1 ? 'day' : 'days'}
+            {formatUsd(q.perDayCents)} × {q.days} {q.days === 1 ? 'day' : 'days'}
           </span>
         </p>
       </div>
@@ -510,20 +667,21 @@ function ReviewStep({
   car,
   start,
   end,
+  quote: q,
   locationLabel,
   details,
   onEdit,
   onContinue,
 }: {
-  car: Vehicle
+  car: PublicCar
   start: Date
   end: Date
+  quote: ReturnType<typeof quote>
   locationLabel: string
   details: Details
   onEdit: (step: number) => void
   onContinue: () => void
 }) {
-  const q = quote(car, start, end)
   return (
     <div>
       <StepHeading title="Look it over" sub="Everything stays editable until you pay." />
@@ -533,7 +691,7 @@ function ReviewStep({
           {fmtDay(start)} → {fmtDay(end)} · {locationLabel}
         </ReviewRow>
         <ReviewRow label="Car" onEdit={() => onEdit(1)}>
-          {car.name}, {car.colorNote.toLowerCase()} · {car.transmission}
+          {car.model}, {car.color.toLowerCase()} · {car.transmission}
         </ReviewRow>
         <ReviewRow label="Driver" onEdit={() => onEdit(2)}>
           {details.name} · {details.email} · {details.phone}
@@ -547,9 +705,9 @@ function ReviewStep({
         <dl className="mt-3 space-y-2 text-[15px] text-cw-ink/85">
           <div className="flex justify-between">
             <dt>
-              ${q.perDay} × {q.days} {q.days === 1 ? 'day' : 'days'}
+              {formatUsd(q.perDayCents)} × {q.days} {q.days === 1 ? 'day' : 'days'}
             </dt>
-            <dd className="font-semibold text-cw-navy">${q.total}</dd>
+            <dd className="font-semibold text-cw-navy">{formatUsd(q.totalCents)}</dd>
           </div>
           <div className="flex justify-between">
             <dt>Pickup and drop-off</dt>
@@ -557,7 +715,7 @@ function ReviewStep({
           </div>
           <div className="flex justify-between border-t border-cw-navy/10 pt-2 text-base">
             <dt className="font-display font-bold text-cw-navy">Total today</dt>
-            <dd className="font-display font-extrabold text-cw-navy">${q.total}</dd>
+            <dd className="font-display font-extrabold text-cw-navy">{formatUsd(q.totalCents)}</dd>
           </div>
         </dl>
       </div>
@@ -597,16 +755,19 @@ function PayStep({
   car,
   start,
   end,
+  quote: q,
   processing,
+  error,
   onPay,
 }: {
-  car: Vehicle
+  car: PublicCar
   start: Date
   end: Date
+  quote: ReturnType<typeof quote>
   processing: boolean
+  error?: string
   onPay: () => void
 }) {
-  const q = quote(car, start, end)
   return (
     <div>
       <StepHeading
@@ -614,11 +775,16 @@ function PayStep({
         sub="Curaçao's own payment platform: pay straight from your bank, no card needed."
       />
       <div className="mt-7 rounded-xl border-2 border-cw-navy/10 p-5 text-center">
-        <p className="text-sm text-cw-ink/70">Total for the {car.name}</p>
-        <p className="mt-1 font-display text-4xl font-extrabold text-cw-navy">${q.total}</p>
+        <p className="text-sm text-cw-ink/70">Total for the {car.model}</p>
+        <p className="mt-1 font-display text-4xl font-extrabold text-cw-navy">{formatUsd(q.totalCents)}</p>
         <p className="mt-1 text-xs text-cw-ink/60">
           {fmtDay(start)} → {fmtDay(end)}
         </p>
+        {error && (
+          <p className="mt-4 rounded-xl bg-[#fdeceb] px-4 py-3 text-sm font-semibold text-[#b3271d]">
+            {error}
+          </p>
+        )}
         <button
           type="button"
           disabled={processing}
@@ -628,41 +794,31 @@ function PayStep({
           {processing ? (
             <>
               <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" aria-hidden="true" />
-              Connecting to Sentoo
+              Reserving your car
             </>
           ) : (
             <>
               <svg viewBox="0 0 16 16" className="h-4 w-4 fill-current" aria-hidden="true">
                 <path d="M8 1a3.5 3.5 0 0 0-3.5 3.5V6H4a1.5 1.5 0 0 0-1.5 1.5v5A1.5 1.5 0 0 0 4 14h8a1.5 1.5 0 0 0 1.5-1.5v-5A1.5 1.5 0 0 0 12 6h-.5V4.5A3.5 3.5 0 0 0 8 1Zm2 5H6V4.5a2 2 0 1 1 4 0V6Z" />
               </svg>
-              Pay with Sentoo
+              Confirm reservation
             </>
           )}
         </button>
         <p className="mt-3 text-xs text-cw-ink/55">
-          Demo mode: no payment is processed yet. Prefer cash or card at pickup? Just say so on
-          WhatsApp.
+          Sentoo payment is not live yet — your car is held and we settle up at pickup. Prefer
+          cash or card? Just say so on WhatsApp.
         </p>
       </div>
     </div>
   )
 }
 
-function Confirmation({
-  car,
-  start,
-  end,
-  details,
-  locationLabel,
-}: {
-  car: Vehicle
-  start: Date
-  end: Date
-  details: Details
-  locationLabel: string
-}) {
-  const first = details.name.trim().split(/\s+/)[0] || 'friend'
-  const q = quote(car, start, end)
+function Confirmation({ confirmation: c }: { confirmation: Confirmed }) {
+  const first = c.client.full_name.trim().split(/\s+/)[0] || 'friend'
+  /** Short, readable handle for WhatsApp — the full uuid is the real key. */
+  const reference = c.bookingId.slice(0, 8).toUpperCase()
+
   return (
     <div className="text-center">
       <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-cw-mint">
@@ -674,11 +830,44 @@ function Confirmation({
         Masha danki, {first}!
       </h2>
       <p className="mx-auto mt-3 max-w-[44ch] text-[15px] leading-relaxed text-cw-ink/85">
-        The {car.name} is yours from {fmtDay(start)} to {fmtDay(end)}, keys at {locationLabel}.
-        We'll confirm on WhatsApp within the hour.
+        The {c.car.model} is yours from {fmtDay(fromKey(c.pickupDate))} to{' '}
+        {fmtDay(fromKey(c.returnDate))}, keys at {c.pickupLocation}. We'll confirm on WhatsApp
+        within the hour.
       </p>
-      <p className="mt-4 font-display text-lg font-bold text-cw-navy">${q.total} · paid with Sentoo</p>
-      <p className="mt-6 text-xs text-cw-ink/55">Demo mode: no payment was processed.</p>
+
+      <dl className="mx-auto mt-7 max-w-[26rem] divide-y divide-cw-navy/10 text-left">
+        <ConfirmRow label="Reference">{reference}</ConfirmRow>
+        <ConfirmRow label="Car">
+          {c.car.model}, {c.car.color.toLowerCase()} · {c.car.transmission} · {c.car.seats} seats
+        </ConfirmRow>
+        <ConfirmRow label="Pickup">
+          {fmtDay(fromKey(c.pickupDate))} at {c.pickupTime.slice(0, 5)} · {c.pickupLocation}
+        </ConfirmRow>
+        <ConfirmRow label="Drop-off">
+          {fmtDay(fromKey(c.returnDate))} at {c.returnTime.slice(0, 5)} · {c.returnLocation}
+        </ConfirmRow>
+        {c.flightNumber && <ConfirmRow label="Flight">{c.flightNumber}</ConfirmRow>}
+        <ConfirmRow label="Total">
+          {formatUsd(c.totalCents)} · {formatUsd(c.perDayCents)} × {c.days}{' '}
+          {c.days === 1 ? 'day' : 'days'}
+        </ConfirmRow>
+        <ConfirmRow label="Status">
+          Reservation {c.bookingStatus} · payment {c.paymentStatus}
+        </ConfirmRow>
+      </dl>
+
+      <p className="mt-6 text-xs text-cw-ink/55">
+        A copy is on its way to {c.client.email}. Keep reference {reference} handy if you message us.
+      </p>
+    </div>
+  )
+}
+
+function ConfirmRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 py-3">
+      <dt className="font-display text-sm font-bold text-cw-navy">{label}</dt>
+      <dd className="text-right text-[15px] text-cw-ink/85">{children}</dd>
     </div>
   )
 }

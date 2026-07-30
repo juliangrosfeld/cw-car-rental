@@ -14,6 +14,14 @@ import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
 import { Route as BookingRouteImport } from './routes/booking'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AdminLoginRouteImport } from './routes/admin/login'
+import { Route as AdminShellRouteImport } from './routes/admin/_shell'
+import { Route as AdminShellIndexRouteImport } from './routes/admin/_shell/index'
+import { Route as AdminShellPaymentsRouteImport } from './routes/admin/_shell/payments'
+import { Route as AdminShellFleetRouteImport } from './routes/admin/_shell/fleet'
+import { Route as AdminShellClientsRouteImport } from './routes/admin/_shell/clients'
+import { Route as AdminShellBookingsIndexRouteImport } from './routes/admin/_shell/bookings.index'
+import { Route as AdminShellBookingsBookingIdRouteImport } from './routes/admin/_shell/bookings.$bookingId'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
@@ -40,6 +48,47 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminLoginRoute = AdminLoginRouteImport.update({
+  id: '/admin/login',
+  path: '/admin/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminShellRoute = AdminShellRouteImport.update({
+  id: '/admin/_shell',
+  path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminShellIndexRoute = AdminShellIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AdminShellRoute,
+} as any)
+const AdminShellPaymentsRoute = AdminShellPaymentsRouteImport.update({
+  id: '/payments',
+  path: '/payments',
+  getParentRoute: () => AdminShellRoute,
+} as any)
+const AdminShellFleetRoute = AdminShellFleetRouteImport.update({
+  id: '/fleet',
+  path: '/fleet',
+  getParentRoute: () => AdminShellRoute,
+} as any)
+const AdminShellClientsRoute = AdminShellClientsRouteImport.update({
+  id: '/clients',
+  path: '/clients',
+  getParentRoute: () => AdminShellRoute,
+} as any)
+const AdminShellBookingsIndexRoute = AdminShellBookingsIndexRouteImport.update({
+  id: '/bookings/',
+  path: '/bookings/',
+  getParentRoute: () => AdminShellRoute,
+} as any)
+const AdminShellBookingsBookingIdRoute =
+  AdminShellBookingsBookingIdRouteImport.update({
+    id: '/bookings/$bookingId',
+    path: '/bookings/$bookingId',
+    getParentRoute: () => AdminShellRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -47,6 +96,14 @@ export interface FileRoutesByFullPath {
   '/booking': typeof BookingRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/admin': typeof AdminShellRouteWithChildren
+  '/admin/login': typeof AdminLoginRoute
+  '/admin/clients': typeof AdminShellClientsRoute
+  '/admin/fleet': typeof AdminShellFleetRoute
+  '/admin/payments': typeof AdminShellPaymentsRoute
+  '/admin/': typeof AdminShellIndexRoute
+  '/admin/bookings/$bookingId': typeof AdminShellBookingsBookingIdRoute
+  '/admin/bookings/': typeof AdminShellBookingsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -54,6 +111,13 @@ export interface FileRoutesByTo {
   '/booking': typeof BookingRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/admin/login': typeof AdminLoginRoute
+  '/admin/clients': typeof AdminShellClientsRoute
+  '/admin/fleet': typeof AdminShellFleetRoute
+  '/admin/payments': typeof AdminShellPaymentsRoute
+  '/admin': typeof AdminShellIndexRoute
+  '/admin/bookings/$bookingId': typeof AdminShellBookingsBookingIdRoute
+  '/admin/bookings': typeof AdminShellBookingsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -62,13 +126,60 @@ export interface FileRoutesById {
   '/booking': typeof BookingRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/admin/_shell': typeof AdminShellRouteWithChildren
+  '/admin/login': typeof AdminLoginRoute
+  '/admin/_shell/clients': typeof AdminShellClientsRoute
+  '/admin/_shell/fleet': typeof AdminShellFleetRoute
+  '/admin/_shell/payments': typeof AdminShellPaymentsRoute
+  '/admin/_shell/': typeof AdminShellIndexRoute
+  '/admin/_shell/bookings/$bookingId': typeof AdminShellBookingsBookingIdRoute
+  '/admin/_shell/bookings/': typeof AdminShellBookingsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/about' | '/booking' | '/robots.txt' | '/sitemap.xml'
+  fullPaths:
+    | '/'
+    | '/about'
+    | '/booking'
+    | '/robots.txt'
+    | '/sitemap.xml'
+    | '/admin'
+    | '/admin/login'
+    | '/admin/clients'
+    | '/admin/fleet'
+    | '/admin/payments'
+    | '/admin/'
+    | '/admin/bookings/$bookingId'
+    | '/admin/bookings/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/about' | '/booking' | '/robots.txt' | '/sitemap.xml'
-  id: '__root__' | '/' | '/about' | '/booking' | '/robots.txt' | '/sitemap.xml'
+  to:
+    | '/'
+    | '/about'
+    | '/booking'
+    | '/robots.txt'
+    | '/sitemap.xml'
+    | '/admin/login'
+    | '/admin/clients'
+    | '/admin/fleet'
+    | '/admin/payments'
+    | '/admin'
+    | '/admin/bookings/$bookingId'
+    | '/admin/bookings'
+  id:
+    | '__root__'
+    | '/'
+    | '/about'
+    | '/booking'
+    | '/robots.txt'
+    | '/sitemap.xml'
+    | '/admin/_shell'
+    | '/admin/login'
+    | '/admin/_shell/clients'
+    | '/admin/_shell/fleet'
+    | '/admin/_shell/payments'
+    | '/admin/_shell/'
+    | '/admin/_shell/bookings/$bookingId'
+    | '/admin/_shell/bookings/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -77,6 +188,8 @@ export interface RootRouteChildren {
   BookingRoute: typeof BookingRoute
   RobotsDottxtRoute: typeof RobotsDottxtRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  AdminShellRoute: typeof AdminShellRouteWithChildren
+  AdminLoginRoute: typeof AdminLoginRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -116,8 +229,86 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/login': {
+      id: '/admin/login'
+      path: '/admin/login'
+      fullPath: '/admin/login'
+      preLoaderRoute: typeof AdminLoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/_shell': {
+      id: '/admin/_shell'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminShellRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/_shell/': {
+      id: '/admin/_shell/'
+      path: '/'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AdminShellIndexRouteImport
+      parentRoute: typeof AdminShellRoute
+    }
+    '/admin/_shell/payments': {
+      id: '/admin/_shell/payments'
+      path: '/payments'
+      fullPath: '/admin/payments'
+      preLoaderRoute: typeof AdminShellPaymentsRouteImport
+      parentRoute: typeof AdminShellRoute
+    }
+    '/admin/_shell/fleet': {
+      id: '/admin/_shell/fleet'
+      path: '/fleet'
+      fullPath: '/admin/fleet'
+      preLoaderRoute: typeof AdminShellFleetRouteImport
+      parentRoute: typeof AdminShellRoute
+    }
+    '/admin/_shell/clients': {
+      id: '/admin/_shell/clients'
+      path: '/clients'
+      fullPath: '/admin/clients'
+      preLoaderRoute: typeof AdminShellClientsRouteImport
+      parentRoute: typeof AdminShellRoute
+    }
+    '/admin/_shell/bookings/': {
+      id: '/admin/_shell/bookings/'
+      path: '/bookings'
+      fullPath: '/admin/bookings/'
+      preLoaderRoute: typeof AdminShellBookingsIndexRouteImport
+      parentRoute: typeof AdminShellRoute
+    }
+    '/admin/_shell/bookings/$bookingId': {
+      id: '/admin/_shell/bookings/$bookingId'
+      path: '/bookings/$bookingId'
+      fullPath: '/admin/bookings/$bookingId'
+      preLoaderRoute: typeof AdminShellBookingsBookingIdRouteImport
+      parentRoute: typeof AdminShellRoute
+    }
   }
 }
+
+interface AdminShellRouteChildren {
+  AdminShellClientsRoute: typeof AdminShellClientsRoute
+  AdminShellFleetRoute: typeof AdminShellFleetRoute
+  AdminShellPaymentsRoute: typeof AdminShellPaymentsRoute
+  AdminShellIndexRoute: typeof AdminShellIndexRoute
+  AdminShellBookingsBookingIdRoute: typeof AdminShellBookingsBookingIdRoute
+  AdminShellBookingsIndexRoute: typeof AdminShellBookingsIndexRoute
+}
+
+const AdminShellRouteChildren: AdminShellRouteChildren = {
+  AdminShellClientsRoute: AdminShellClientsRoute,
+  AdminShellFleetRoute: AdminShellFleetRoute,
+  AdminShellPaymentsRoute: AdminShellPaymentsRoute,
+  AdminShellIndexRoute: AdminShellIndexRoute,
+  AdminShellBookingsBookingIdRoute: AdminShellBookingsBookingIdRoute,
+  AdminShellBookingsIndexRoute: AdminShellBookingsIndexRoute,
+}
+
+const AdminShellRouteWithChildren = AdminShellRoute._addFileChildren(
+  AdminShellRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
@@ -125,6 +316,8 @@ const rootRouteChildren: RootRouteChildren = {
   BookingRoute: BookingRoute,
   RobotsDottxtRoute: RobotsDottxtRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
+  AdminShellRoute: AdminShellRouteWithChildren,
+  AdminLoginRoute: AdminLoginRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -1,10 +1,15 @@
 import { useMemo, useState } from 'react'
-import { DAY_MS, dayFullyBooked, toKey } from './availability'
+import { DAY_MS, dayFullyBooked, toKey, type BusyRange } from '../../lib/booking/rental'
 
 /**
  * Custom range picker, board 4's calendar: teal selected range, disabled
  * past days, hard-disabled days where the whole fleet is out. First click
  * sets pickup, second sets drop-off (clicking behind the start restarts).
+ *
+ * `busy` and `carIds` come from the live database (getFleetAvailability), so
+ * the crossed-out days are real bookings, not sample data. While the query is
+ * still loading both arrive empty, which disables nothing — the wizard shows a
+ * loading state rather than letting someone pick into a booked day.
  */
 
 const WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
@@ -13,9 +18,13 @@ interface CalendarProps {
   start?: Date
   end?: Date
   onChange: (start?: Date, end?: Date) => void
+  /** Occupied ranges across the whole fleet. */
+  busy: readonly BusyRange[]
+  /** Every bookable car id — a day is only "full" when all of them are out. */
+  carIds: readonly string[]
 }
 
-export default function Calendar({ start, end, onChange }: CalendarProps) {
+export default function Calendar({ start, end, onChange, busy, carIds }: CalendarProps) {
   const today = useMemo(() => {
     const d = new Date()
     d.setHours(0, 0, 0, 0)
@@ -83,7 +92,7 @@ export default function Calendar({ start, end, onChange }: CalendarProps) {
         {cells.map((day, i) => {
           if (!day) return <span key={`pad-${i}`} />
           const past = day.getTime() < today.getTime()
-          const full = dayFullyBooked(day)
+          const full = dayFullyBooked(busy, carIds, toKey(day))
           const disabled = past || full
           const isStart = start && toKey(day) === toKey(start)
           const isEnd = end && toKey(day) === toKey(end)
@@ -123,3 +132,4 @@ export default function Calendar({ start, end, onChange }: CalendarProps) {
 }
 
 export { DAY_MS }
+
