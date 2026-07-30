@@ -33,10 +33,17 @@ import {
 } from "../admin/bookings.server";
 import { getClientDetail, getClientsList } from "../admin/clients.server";
 import { getFleetCar, getFleetOverview, updateCar } from "../admin/fleet.server";
+import {
+  getBookingLedger,
+  getPaymentsOverview,
+  recordPayment,
+  syncBookingPaymentStatus,
+} from "../admin/payments.server";
+import { PAYMENT_METHODS } from "../admin/payments";
 import { STATS_WINDOWS, type StatsWindow } from "../admin/fleet";
 import { PREP_FLOW } from "../admin/prep";
 import { CAR_STATUS } from "../supabase/types";
-import type { BookingFilters, ClientFilter } from "../admin/types";
+import type { BookingFilters, ClientFilter, PaymentsFilter } from "../admin/types";
 
 const credentialsSchema = z.object({
   email: z
@@ -215,6 +222,64 @@ export const fetchAdminClient = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     const admin = await requireAdmin();
     return { admin, client: await getClientDetail(data.clientId) };
+  });
+
+/* ── payments ──────────────────────────────────────────────────────────────── */
+
+/** The money screen: what has been taken, what is owed, and the ledger. */
+export const fetchAdminPayments = createServerFn({ method: "GET" })
+  .inputValidator(
+    z.object({
+      filter: z.enum(["outstanding", "paid", "refunded", "mismatched", "all"]).nullish(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const admin = await requireAdmin();
+    return {
+      admin,
+      payments: await getPaymentsOverview((data.filter ?? "outstanding") as PaymentsFilter),
+    };
+  });
+
+/** One booking's ledger, for the payments panel on its page. */
+export const fetchBookingLedger = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ bookingId: z.string().min(1).max(64) }))
+  .handler(async ({ data }) => {
+    await requireAdmin();
+    return { ledger: await getBookingLedger(data.bookingId) };
+  });
+
+/**
+ * Record money that has already changed hands — cash at the counter, a card
+ * machine, a transfer that landed.
+ *
+ * THE AMOUNT ARRIVES IN CENTS and the SIGN is not in it: `direction` says
+ * whether this is a charge or a refund, so no form can turn a mistyped minus
+ * into a refund. Nothing here contacts a payment provider; see PROVIDER in
+ * src/lib/admin/payments.ts.
+ */
+export const recordBookingPayment = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      bookingId: z.uuid(),
+      amountCents: z.number().int().positive(),
+      method: z.enum(PAYMENT_METHODS),
+      direction: z.enum(["charge", "refund"]),
+      pending: z.boolean().nullish(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    await requireAdmin();
+    return recordPayment({ ...data, pending: data.pending ?? false });
+  });
+
+/** Make a booking's stored payment status agree with its ledger. The repair for
+ *  a mismatch, applied deliberately rather than silently at read time. */
+export const syncBookingPayment = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ bookingId: z.uuid() }))
+  .handler(async ({ data }) => {
+    await requireAdmin();
+    return { ok: true as const, ledger: await syncBookingPaymentStatus(data.bookingId) };
   });
 
 /* ── fleet ─────────────────────────────────────────────────────────────────── */

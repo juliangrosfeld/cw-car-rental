@@ -23,7 +23,16 @@ import { useState } from "react";
 import { PrepAdvanceButton, PrepPipeline } from "../../../components/admin/prep-controls";
 import AdminShell from "../../../components/admin/shell";
 import { Button, Field, Panel, StatusPill } from "../../../components/admin/ui";
-import { fetchAdminBooking, updateBookingAdminNotes } from "../../../lib/api/admin.functions";
+import {
+  FixMismatch,
+  LedgerEntries,
+  RecordPayment,
+} from "../../../components/admin/payment-controls";
+import {
+  fetchAdminBooking,
+  fetchBookingLedger,
+  updateBookingAdminNotes,
+} from "../../../lib/api/admin.functions";
 import {
   formatDate,
   formatDateLong,
@@ -35,13 +44,22 @@ import {
 import type { BookingDetail } from "../../../lib/admin/types";
 
 export const Route = createFileRoute("/admin/_shell/bookings/$bookingId")({
-  loader: ({ params }) => fetchAdminBooking({ data: { bookingId: params.bookingId } }),
+  // Two round trips, deliberately: the ledger is a separate aggregate over a
+  // separate table, and keeping it separate is what lets the payments panel
+  // redraw after a write without re-reading the whole booking.
+  loader: async ({ params }) => {
+    const [booking, ledger] = await Promise.all([
+      fetchAdminBooking({ data: { bookingId: params.bookingId } }),
+      fetchBookingLedger({ data: { bookingId: params.bookingId } }),
+    ]);
+    return { ...booking, ledger: ledger.ledger };
+  },
   head: () => ({ meta: [{ title: "Booking | CW back office" }] }),
   component: BookingDetailPage,
 });
 
 function BookingDetailPage() {
-  const { admin, booking } = Route.useLoaderData();
+  const { admin, booking, ledger } = Route.useLoaderData();
   const [notice, setNotice] = useState<string | null>(null);
 
   // A booking can legitimately be missing: a bookmarked link to something that
@@ -204,9 +222,48 @@ function BookingDetailPage() {
               </span>
               <StatusPill value={booking.paymentStatus} />
             </div>
-            <p className="mt-2 text-[11px] text-cw-ink/45">
-              Taking and recording payments arrives with the Payments section.
-            </p>
+            {ledger && (
+              <div className="mt-2 space-y-1 text-[12px]">
+                <div className="flex justify-between">
+                  <span className="text-cw-ink/55">Collected</span>
+                  <span className="font-semibold tabular-nums text-cw-navy">
+                    {formatMoneyExact(ledger.netCents)}
+                  </span>
+                </div>
+                {ledger.refundedCents > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-cw-ink/55">Refunded</span>
+                    <span className="font-semibold tabular-nums text-[#b3261e]">
+                      −{formatMoneyExact(ledger.refundedCents)}
+                    </span>
+                  </div>
+                )}
+                <div className="flex justify-between border-t border-cw-navy/8 pt-1">
+                  <span className="text-cw-ink/55">
+                    {ledger.overpaidCents > 0 ? "Overpaid" : "Still owed"}
+                  </span>
+                  <span
+                    className={`font-semibold tabular-nums ${
+                      ledger.overpaidCents > 0
+                        ? "text-[#8a6a04]"
+                        : ledger.outstandingCents > 0
+                          ? "text-[#b3261e]"
+                          : "text-[#1a7a45]"
+                    }`}
+                  >
+                    {formatMoneyExact(
+                      ledger.overpaidCents > 0 ? ledger.overpaidCents : ledger.outstandingCents,
+                    )}
+                  </span>
+                </div>
+                {ledger.pendingCents > 0 && (
+                  <p className="pt-1 text-[11px] text-cw-ink/50">
+                    {formatMoneyExact(ledger.pendingCents)} recorded as expected but not arrived —
+                    not counted above.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         </Panel>
       </div>
@@ -260,6 +317,25 @@ function BookingDetailPage() {
           </div>
         </Panel>
       </div>
+
+      {/* ── the ledger ───────────────────────────────────────────────────── */}
+      {ledger && (
+        <div className="mt-4">
+          <Panel
+            title="Payments"
+            subtitle="What has actually changed hands against this booking"
+            action={
+              <span className="text-[12px] text-cw-ink/55">
+                {formatMoneyExact(ledger.netCents)} of {formatMoneyExact(ledger.totalCents)}
+              </span>
+            }
+          >
+            <FixMismatch ledger={ledger} />
+            <LedgerEntries ledger={ledger} />
+            <RecordPayment ledger={ledger} />
+          </Panel>
+        </div>
+      )}
 
       {/* ── notes ────────────────────────────────────────────────────────── */}
       <div className="mt-4 grid gap-4 lg:grid-cols-2">

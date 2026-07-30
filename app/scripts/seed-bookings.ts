@@ -116,6 +116,24 @@ interface Fixture {
   prepStatus: PrepStatus;
   specialRequests?: string;
   adminNotes?: string;
+  /**
+   * What the payments ledger should say about this booking.
+   *
+   *   "settled"   one entry for the full amount
+   *   "deposit"   a third up front, the balance still owed
+   *   "split"     deposit then balance, two entries
+   *   "refunded"  taken in full, then handed back — two entries netting zero
+   *   "pending"   a transfer said to be on its way, which counts as nothing
+   *   "none"      no entries at all
+   *
+   * Omitted means: settled if payment_status is 'paid', otherwise nothing. That
+   * default is what keeps the fixture set free of reconciliation warnings except
+   * where one is wanted — see `mismatch` below.
+   */
+  ledger?: "settled" | "deposit" | "split" | "refunded" | "pending" | "none";
+  /** Leave payment_status deliberately disagreeing with the ledger, to exercise
+   *  the reconciliation queue. */
+  mismatch?: boolean;
 }
 
 const AIRPORT = "Hato International Airport (CUR)";
@@ -144,6 +162,7 @@ const FIXTURES: Fixture[] = [
     paymentStatus: "paid",
     prepStatus: "out",
     specialRequests: "Child seat for a two-year-old, please.",
+    ledger: "split",
     adminNotes:
       "Child seat fitted and photographed at handover. Small scuff on the rear bumper was already there — photos on file.",
   },
@@ -251,6 +270,7 @@ const FIXTURES: Fixture[] = [
     bookingStatus: "cancelled",
     paymentStatus: "refunded",
     prepStatus: "booked",
+    ledger: "refunded",
     adminNotes: "Cancelled two days after booking, trip called off. Deposit refunded in full.",
   },
   {
@@ -351,6 +371,7 @@ const FIXTURES: Fixture[] = [
     paymentStatus: "pending",
     prepStatus: "booked",
     specialRequests: "Four weeks — is there a monthly rate?",
+    ledger: "deposit",
     adminNotes:
       "Bank transfer promised before pickup. Quoted at the standard daily rate; Clay to confirm a long-stay discount.",
   },
@@ -390,6 +411,7 @@ const FIXTURES: Fixture[] = [
     bookingStatus: "completed",
     paymentStatus: "paid",
     prepStatus: "returned",
+    mismatch: true,
   },
   {
     exercises: "Repeat customer: Marieke's first rental with CW, four months back",
@@ -570,6 +592,7 @@ const FIXTURES: Fixture[] = [
     paymentStatus: "unpaid",
     prepStatus: "booked",
     specialRequests: "Two child seats if possible.",
+    ledger: "pending",
   },
 ];
 
@@ -610,6 +633,23 @@ async function clear(quiet = false): Promise<{ bookings: number; clients: number
   // need the same treatment; the CRM does not write any yet, and this deletes
   // none, so a stray payment row would (correctly) block the clear rather than
   // being silently discarded.
+  // Payments first: payments.booking_id is ON DELETE RESTRICT, so a fixture
+  // booking with a ledger cannot go while its entries are still there.
+  const { data: fixtureBookings, error: findError } = await db
+    .from("bookings")
+    .select("id")
+    .in("client_id", clientIds);
+  if (findError) fail(`Could not list fixture bookings: ${findError.message}`);
+
+  const bookingIds = (fixtureBookings ?? []).map((b) => b.id);
+  if (bookingIds.length > 0) {
+    const { error: paymentsError } = await db
+      .from("payments")
+      .delete()
+      .in("booking_id", bookingIds);
+    if (paymentsError) fail(`Could not delete fixture payments: ${paymentsError.message}`);
+  }
+
   const { data: deletedBookings, error: bookingsError } = await db
     .from("bookings")
     .delete()
@@ -685,23 +725,27 @@ async function seed() {
     // billable days, exactly what the public booking flow computes.
     const { totalCents } = quote(car.daily_rate, pickupDate, returnDate);
 
-    const { error: bookingError } = await db.from("bookings").insert({
-      client_id: clientId,
-      car_id: fixture.carId,
-      pickup_date: pickupDate,
-      pickup_time: fixture.pickupTime ?? "10:00:00",
-      return_date: returnDate,
-      return_time: fixture.returnTime ?? "10:00:00",
-      pickup_location: fixture.pickupLocation,
-      return_location: fixture.returnLocation,
-      flight_number: fixture.flightNumber ?? null,
-      total_price: totalCents,
-      booking_status: fixture.bookingStatus,
-      payment_status: fixture.paymentStatus,
-      prep_status: fixture.prepStatus,
-      special_requests: fixture.specialRequests ?? null,
-      admin_notes: fixture.adminNotes ?? null,
-    });
+    const { data: booking, error: bookingError } = await db
+      .from("bookings")
+      .insert({
+        client_id: clientId,
+        car_id: fixture.carId,
+        pickup_date: pickupDate,
+        pickup_time: fixture.pickupTime ?? "10:00:00",
+        return_date: returnDate,
+        return_time: fixture.returnTime ?? "10:00:00",
+        pickup_location: fixture.pickupLocation,
+        return_location: fixture.returnLocation,
+        flight_number: fixture.flightNumber ?? null,
+        total_price: totalCents,
+        booking_status: fixture.bookingStatus,
+        payment_status: fixture.paymentStatus,
+        prep_status: fixture.prepStatus,
+        special_requests: fixture.specialRequests ?? null,
+        admin_notes: fixture.adminNotes ?? null,
+      })
+      .select("id")
+      .single();
 
     if (bookingError) {
       // 23P01 is the double-booking guard. It firing here means two fixtures
@@ -711,6 +755,84 @@ async function seed() {
           ? "\n    Two fixtures collide on the same car — adjust the offsets in this script."
           : "";
       fail(`Could not create booking for ${fixture.guest.name}: ${bookingError.message}${hint}`);
+    }
+
+    // ── the payments ledger ───────────────────────────────────────────────
+    // Real bookings accumulate entries as money arrives; fixtures that skipped
+    // this would show every paid booking as "marked paid, nothing recorded",
+    // which is the reconciliation warning rather than the normal case.
+    const recipe =
+      fixture.ledger ??
+      (fixture.paymentStatus === "paid" && !fixture.mismatch ? "settled" : "none");
+
+    const third = Math.round(totalCents / 3);
+
+    // Entries are BACKDATED to when the money would really have moved. Left at
+    // the default now(), every fixture payment would land today and the payments
+    // page would show "taken today" equal to "taken all time" — which hides
+    // exactly the date bucketing the page is there to do. The offset is written
+    // explicitly (-04:00, Curaçao) because created_at is a timestamptz.
+    const at = (offsetDays: number, hour = "14:30:00") => `${day(offsetDays)}T${hour}-04:00`;
+    // Money for a rental already under way arrives at handover; money for one
+    // still ahead was prepaid when it was booked.
+    const settledAt =
+      fixture.pickupOffset <= 0
+        ? at(fixture.pickupOffset, "10:00:00")
+        : at(fixture.pickupOffset - 10);
+    const depositAt = at(fixture.pickupOffset - 20);
+
+    const entries: { amount: number; method: string; status: string; created_at: string }[] =
+      recipe === "settled"
+        ? [{ amount: totalCents, method: "card", status: "paid", created_at: settledAt }]
+        : recipe === "deposit"
+          ? [{ amount: third, method: "cash", status: "paid", created_at: depositAt }]
+          : recipe === "split"
+            ? [
+                { amount: third, method: "bank_transfer", status: "paid", created_at: depositAt },
+                {
+                  amount: totalCents - third,
+                  method: "cash",
+                  status: "paid",
+                  created_at: settledAt,
+                },
+              ]
+            : recipe === "refunded"
+              ? [
+                  { amount: totalCents, method: "card", status: "paid", created_at: depositAt },
+                  {
+                    amount: -totalCents,
+                    method: "card",
+                    status: "paid",
+                    created_at: at(fixture.pickupOffset - 3),
+                  },
+                ]
+              : recipe === "pending"
+                ? [
+                    {
+                      amount: totalCents,
+                      method: "bank_transfer",
+                      status: "pending",
+                      created_at: at(-2),
+                    },
+                  ]
+                : [];
+
+    if (entries.length > 0) {
+      const { error: paymentsError } = await db.from("payments").insert(
+        entries.map((entry) => ({
+          booking_id: booking!.id,
+          amount: entry.amount,
+          method: entry.method,
+          status: entry.status,
+          created_at: entry.created_at,
+          provider_transaction_id: null,
+        })),
+      );
+      if (paymentsError) {
+        fail(
+          `Could not record fixture payments for ${fixture.guest.name}: ${paymentsError.message}`,
+        );
+      }
     }
 
     rows.push({

@@ -223,6 +223,100 @@ export type BookingWriteResult =
   | { ok: false; reason: "not_found"; message: string }
   | { ok: false; reason: "stale"; message: string; booking: BookingDetail };
 
+/* ── payments ──────────────────────────────────────────────────────────────── */
+
+/** One movement of money, as the CRM shows it. Positive is in, negative is a
+ *  refund — see the header of ./payments.ts for why a refund is a signed row
+ *  and never a deletion. */
+export interface LedgerEntry {
+  id: string;
+  bookingId: string;
+  /** Cents, signed. */
+  amountCents: number;
+  method: string;
+  status: PaymentStatus;
+  /** Set only by a provider integration. Always null while Sentoo is unconnected. */
+  providerTransactionId: string | null;
+  createdAt: string;
+}
+
+/** A booking's ledger, totalled. */
+export interface BookingLedger {
+  bookingId: string;
+  totalCents: number;
+  netCents: number;
+  chargedCents: number;
+  refundedCents: number;
+  pendingCents: number;
+  outstandingCents: number;
+  overpaidCents: number;
+  /** Derived from the rows, not read from the booking. */
+  derivedStatus: PaymentStatus;
+  /** Present when the booking's stored status disagrees with the rows. */
+  mismatch: { stored: PaymentStatus; derived: PaymentStatus; reason: string } | null;
+  entries: LedgerEntry[];
+}
+
+/** One booking on the payments queue. */
+export interface PaymentsRow {
+  bookingId: string;
+  ref: string;
+  clientId: string;
+  clientName: string;
+  carLabel: string;
+  pickupDate: string;
+  returnDate: string;
+  bookingStatus: BookingStatus;
+  storedStatus: PaymentStatus;
+  derivedStatus: PaymentStatus;
+  totalCents: number;
+  netCents: number;
+  outstandingCents: number;
+  entries: number;
+  mismatch: { stored: PaymentStatus; derived: PaymentStatus; reason: string } | null;
+  /** True while the rental has not finished — money owed on a car already out
+   *  is more urgent than money owed on a booking in November. */
+  isOpen: boolean;
+}
+
+export type PaymentsFilter = "outstanding" | "paid" | "refunded" | "mismatched" | "all";
+
+export interface PaymentsOverview {
+  today: string;
+  monthLabel: string;
+  filter: PaymentsFilter;
+  rows: PaymentsRow[];
+  /** Matching the filter, before the display cap. */
+  total: number;
+  truncated: boolean;
+  /** Counts for the filter chips, across every booking. */
+  counts: {
+    all: number;
+    outstanding: number;
+    paid: number;
+    refunded: number;
+    mismatched: number;
+  };
+  /** Ledger figures, bucketed on when the money moved (payments.created_at) —
+   *  a different basis from the dashboard's, which recognises a booking's whole
+   *  value on its pickup date. Both are labelled by their basis. */
+  takings: {
+    todayCents: number;
+    monthCents: number;
+    allTimeCents: number;
+    refundedMonthCents: number;
+    /** Owed across every unfinished, non-cancelled booking. */
+    outstandingCents: number;
+  };
+  /** The most recent movements, newest first. */
+  recent: (LedgerEntry & { ref: string; clientName: string })[];
+}
+
+/** The result of writing to the ledger. */
+export type PaymentWriteResult =
+  | { ok: true; ledger: BookingLedger }
+  | { ok: false; reason: "not_found" | "invalid"; message: string };
+
 /* ── clients ───────────────────────────────────────────────────────────────── */
 
 /**

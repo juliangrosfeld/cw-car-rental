@@ -61,12 +61,15 @@ function ClientsPage() {
   // every letter. It submits on Enter or on the button.
   const [draft, setDraft] = useState(search.q ?? "");
 
+  // Built explicitly rather than spread from the previous search: TanStack types
+  // `prev` as the union of every route's search params, and this page owns only
+  // these two. Naming them is also what keeps a stale key from riding along.
   function submit() {
     navigate({
-      search: (prev: ClientsSearch): ClientsSearch => ({
-        ...prev,
+      search: {
         q: draft.trim() === "" ? undefined : draft.trim(),
-      }),
+        filter: search.filter,
+      },
     });
   }
 
@@ -111,7 +114,7 @@ function ClientsPage() {
           <div className="flex flex-wrap items-center gap-1.5">
             <Link
               to="/admin/clients"
-              search={(prev: ClientsSearch): ClientsSearch => ({ ...prev, filter: undefined })}
+              search={{ q: search.q, filter: undefined }}
               className={chipClass(!search.filter)}
             >
               Everyone <span className="tabular-nums opacity-70">{list.totals.clients}</span>
@@ -120,10 +123,10 @@ function ClientsPage() {
               <Link
                 key={filter}
                 to="/admin/clients"
-                search={(prev: ClientsSearch): ClientsSearch => ({
-                  ...prev,
+                search={{
+                  q: search.q,
                   filter: search.filter === filter ? undefined : filter,
-                })}
+                }}
                 className={chipClass(search.filter === filter)}
               >
                 {FILTER_LABEL[filter]}{" "}
