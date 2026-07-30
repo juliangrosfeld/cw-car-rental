@@ -18,9 +18,10 @@ import { Route as AdminLoginRouteImport } from './routes/admin/login'
 import { Route as AdminShellRouteImport } from './routes/admin/_shell'
 import { Route as AdminShellIndexRouteImport } from './routes/admin/_shell/index'
 import { Route as AdminShellPaymentsRouteImport } from './routes/admin/_shell/payments'
-import { Route as AdminShellFleetRouteImport } from './routes/admin/_shell/fleet'
 import { Route as AdminShellClientsRouteImport } from './routes/admin/_shell/clients'
+import { Route as AdminShellFleetIndexRouteImport } from './routes/admin/_shell/fleet.index'
 import { Route as AdminShellBookingsIndexRouteImport } from './routes/admin/_shell/bookings.index'
+import { Route as AdminShellFleetCarIdRouteImport } from './routes/admin/_shell/fleet.$carId'
 import { Route as AdminShellBookingsBookingIdRouteImport } from './routes/admin/_shell/bookings.$bookingId'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
@@ -68,19 +69,24 @@ const AdminShellPaymentsRoute = AdminShellPaymentsRouteImport.update({
   path: '/payments',
   getParentRoute: () => AdminShellRoute,
 } as any)
-const AdminShellFleetRoute = AdminShellFleetRouteImport.update({
-  id: '/fleet',
-  path: '/fleet',
-  getParentRoute: () => AdminShellRoute,
-} as any)
 const AdminShellClientsRoute = AdminShellClientsRouteImport.update({
   id: '/clients',
   path: '/clients',
   getParentRoute: () => AdminShellRoute,
 } as any)
+const AdminShellFleetIndexRoute = AdminShellFleetIndexRouteImport.update({
+  id: '/fleet/',
+  path: '/fleet/',
+  getParentRoute: () => AdminShellRoute,
+} as any)
 const AdminShellBookingsIndexRoute = AdminShellBookingsIndexRouteImport.update({
   id: '/bookings/',
   path: '/bookings/',
+  getParentRoute: () => AdminShellRoute,
+} as any)
+const AdminShellFleetCarIdRoute = AdminShellFleetCarIdRouteImport.update({
+  id: '/fleet/$carId',
+  path: '/fleet/$carId',
   getParentRoute: () => AdminShellRoute,
 } as any)
 const AdminShellBookingsBookingIdRoute =
@@ -99,11 +105,12 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminShellRouteWithChildren
   '/admin/login': typeof AdminLoginRoute
   '/admin/clients': typeof AdminShellClientsRoute
-  '/admin/fleet': typeof AdminShellFleetRoute
   '/admin/payments': typeof AdminShellPaymentsRoute
   '/admin/': typeof AdminShellIndexRoute
   '/admin/bookings/$bookingId': typeof AdminShellBookingsBookingIdRoute
+  '/admin/fleet/$carId': typeof AdminShellFleetCarIdRoute
   '/admin/bookings/': typeof AdminShellBookingsIndexRoute
+  '/admin/fleet/': typeof AdminShellFleetIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -113,11 +120,12 @@ export interface FileRoutesByTo {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/clients': typeof AdminShellClientsRoute
-  '/admin/fleet': typeof AdminShellFleetRoute
   '/admin/payments': typeof AdminShellPaymentsRoute
   '/admin': typeof AdminShellIndexRoute
   '/admin/bookings/$bookingId': typeof AdminShellBookingsBookingIdRoute
+  '/admin/fleet/$carId': typeof AdminShellFleetCarIdRoute
   '/admin/bookings': typeof AdminShellBookingsIndexRoute
+  '/admin/fleet': typeof AdminShellFleetIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -129,11 +137,12 @@ export interface FileRoutesById {
   '/admin/_shell': typeof AdminShellRouteWithChildren
   '/admin/login': typeof AdminLoginRoute
   '/admin/_shell/clients': typeof AdminShellClientsRoute
-  '/admin/_shell/fleet': typeof AdminShellFleetRoute
   '/admin/_shell/payments': typeof AdminShellPaymentsRoute
   '/admin/_shell/': typeof AdminShellIndexRoute
   '/admin/_shell/bookings/$bookingId': typeof AdminShellBookingsBookingIdRoute
+  '/admin/_shell/fleet/$carId': typeof AdminShellFleetCarIdRoute
   '/admin/_shell/bookings/': typeof AdminShellBookingsIndexRoute
+  '/admin/_shell/fleet/': typeof AdminShellFleetIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -146,11 +155,12 @@ export interface FileRouteTypes {
     | '/admin'
     | '/admin/login'
     | '/admin/clients'
-    | '/admin/fleet'
     | '/admin/payments'
     | '/admin/'
     | '/admin/bookings/$bookingId'
+    | '/admin/fleet/$carId'
     | '/admin/bookings/'
+    | '/admin/fleet/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -160,11 +170,12 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/admin/login'
     | '/admin/clients'
-    | '/admin/fleet'
     | '/admin/payments'
     | '/admin'
     | '/admin/bookings/$bookingId'
+    | '/admin/fleet/$carId'
     | '/admin/bookings'
+    | '/admin/fleet'
   id:
     | '__root__'
     | '/'
@@ -175,11 +186,12 @@ export interface FileRouteTypes {
     | '/admin/_shell'
     | '/admin/login'
     | '/admin/_shell/clients'
-    | '/admin/_shell/fleet'
     | '/admin/_shell/payments'
     | '/admin/_shell/'
     | '/admin/_shell/bookings/$bookingId'
+    | '/admin/_shell/fleet/$carId'
     | '/admin/_shell/bookings/'
+    | '/admin/_shell/fleet/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -257,13 +269,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminShellPaymentsRouteImport
       parentRoute: typeof AdminShellRoute
     }
-    '/admin/_shell/fleet': {
-      id: '/admin/_shell/fleet'
-      path: '/fleet'
-      fullPath: '/admin/fleet'
-      preLoaderRoute: typeof AdminShellFleetRouteImport
-      parentRoute: typeof AdminShellRoute
-    }
     '/admin/_shell/clients': {
       id: '/admin/_shell/clients'
       path: '/clients'
@@ -271,11 +276,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminShellClientsRouteImport
       parentRoute: typeof AdminShellRoute
     }
+    '/admin/_shell/fleet/': {
+      id: '/admin/_shell/fleet/'
+      path: '/fleet'
+      fullPath: '/admin/fleet/'
+      preLoaderRoute: typeof AdminShellFleetIndexRouteImport
+      parentRoute: typeof AdminShellRoute
+    }
     '/admin/_shell/bookings/': {
       id: '/admin/_shell/bookings/'
       path: '/bookings'
       fullPath: '/admin/bookings/'
       preLoaderRoute: typeof AdminShellBookingsIndexRouteImport
+      parentRoute: typeof AdminShellRoute
+    }
+    '/admin/_shell/fleet/$carId': {
+      id: '/admin/_shell/fleet/$carId'
+      path: '/fleet/$carId'
+      fullPath: '/admin/fleet/$carId'
+      preLoaderRoute: typeof AdminShellFleetCarIdRouteImport
       parentRoute: typeof AdminShellRoute
     }
     '/admin/_shell/bookings/$bookingId': {
@@ -290,20 +309,22 @@ declare module '@tanstack/react-router' {
 
 interface AdminShellRouteChildren {
   AdminShellClientsRoute: typeof AdminShellClientsRoute
-  AdminShellFleetRoute: typeof AdminShellFleetRoute
   AdminShellPaymentsRoute: typeof AdminShellPaymentsRoute
   AdminShellIndexRoute: typeof AdminShellIndexRoute
   AdminShellBookingsBookingIdRoute: typeof AdminShellBookingsBookingIdRoute
+  AdminShellFleetCarIdRoute: typeof AdminShellFleetCarIdRoute
   AdminShellBookingsIndexRoute: typeof AdminShellBookingsIndexRoute
+  AdminShellFleetIndexRoute: typeof AdminShellFleetIndexRoute
 }
 
 const AdminShellRouteChildren: AdminShellRouteChildren = {
   AdminShellClientsRoute: AdminShellClientsRoute,
-  AdminShellFleetRoute: AdminShellFleetRoute,
   AdminShellPaymentsRoute: AdminShellPaymentsRoute,
   AdminShellIndexRoute: AdminShellIndexRoute,
   AdminShellBookingsBookingIdRoute: AdminShellBookingsBookingIdRoute,
+  AdminShellFleetCarIdRoute: AdminShellFleetCarIdRoute,
   AdminShellBookingsIndexRoute: AdminShellBookingsIndexRoute,
+  AdminShellFleetIndexRoute: AdminShellFleetIndexRoute,
 }
 
 const AdminShellRouteWithChildren = AdminShellRoute._addFileChildren(

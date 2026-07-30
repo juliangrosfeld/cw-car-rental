@@ -31,6 +31,8 @@
  * rows are outside the exclusion constraint's partial WHERE. Rather than hide
  * them or draw them on top of each other, overlapping bars stack into lanes.
  */
+import { rentalDays } from "../booking/rental";
+import type { BookingStatus, PaymentStatus, PrepStatus } from "../supabase/types";
 import { addDays, addMonths, daysBetween, monthFirstDay, monthLabel } from "./clock";
 import type { TimelineBar } from "./types";
 
@@ -112,6 +114,62 @@ export function barGeometry(
     clippedStart: pickupDate < grid.firstDay,
     clippedEnd: barEnd > grid.nextMonthFirstDay,
   };
+}
+
+/**
+ * One rental, as little of it as a bar needs. The shape both the bookings page
+ * and the fleet page hand in — keeping it here rather than importing a
+ * database row is what lets this module stay pure and browser-safe.
+ */
+export interface RentalForBar {
+  id: string;
+  carId: string;
+  clientName: string;
+  pickupDate: string;
+  returnDate: string;
+  pickupTime: string;
+  returnTime: string;
+  totalCents: number;
+  bookingStatus: BookingStatus;
+  paymentStatus: PaymentStatus;
+  prepStatus: PrepStatus;
+}
+
+/**
+ * Rentals → bars, dropping the ones that turn out not to reach this month.
+ *
+ * The SQL windows that fetch these are deliberately a little wider than the grid
+ * (they work in whole dates, while a bar's occupied range ends the day BEFORE
+ * the return date), so this is where the exact rule is applied and the surplus
+ * falls away. Lanes are assigned separately, per car, by packLanes.
+ */
+export function toBars(rentals: readonly RentalForBar[], grid: MonthGrid): TimelineBar[] {
+  const bars: TimelineBar[] = [];
+
+  for (const rental of rentals) {
+    const geometry = barGeometry(rental.pickupDate, rental.returnDate, grid);
+    if (!geometry) continue;
+
+    bars.push({
+      bookingId: rental.id,
+      ref: rental.id.slice(0, 8),
+      clientName: rental.clientName,
+      carId: rental.carId,
+      pickupDate: rental.pickupDate,
+      returnDate: rental.returnDate,
+      pickupTime: rental.pickupTime,
+      returnTime: rental.returnTime,
+      days: rentalDays(rental.pickupDate, rental.returnDate),
+      totalCents: rental.totalCents,
+      bookingStatus: rental.bookingStatus,
+      paymentStatus: rental.paymentStatus,
+      prepStatus: rental.prepStatus,
+      ...geometry,
+      lane: 0,
+    });
+  }
+
+  return bars;
 }
 
 /**

@@ -222,6 +222,138 @@ export type BookingWriteResult =
   | { ok: false; reason: "not_found"; message: string }
   | { ok: false; reason: "stale"; message: string; booking: BookingDetail };
 
+/* ── fleet ─────────────────────────────────────────────────────────────────── */
+
+/**
+ * What a car did over a stated window. Every field is scoped to that window and
+ * the window is always shown beside them, because "utilisation" with no period
+ * attached is not a number anyone can act on.
+ */
+export interface FleetCarStats {
+  /** Length of the window in days, ending today inclusive. */
+  windowDays: number;
+  /** Days inside the window the car was spoken for — paid or not, since an
+   *  unpaid rental still kept it off the forecourt. */
+  daysOut: number;
+  /** daysOut / windowDays as 0-100, one decimal. */
+  utilisationPct: number;
+  /**
+   * Money COLLECTED: paid bookings, recognised on the pickup date. The same
+   * basis the dashboard uses, deliberately — two pages of one tool must not
+   * answer "what did this car earn" differently.
+   */
+  collectedCents: number;
+  /** Rentals whose pickup fell in the window, paid or not. */
+  rentals: number;
+  /** Mean billable days per rental in the window, one decimal. */
+  averageRentalDays: number;
+}
+
+/** One car on the fleet overview. */
+export interface FleetCarRow {
+  id: string;
+  label: string;
+  model: string;
+  color: string;
+  category: string;
+  photoUrl: string;
+  dailyRateCents: number;
+  status: CarStatus;
+  /** INTERNAL — never goes near a public payload. */
+  maintenanceNotes: string | null;
+  offRoadSince: string | null;
+  /** Whole days since it left the road, or null while it is on it. */
+  offRoadDays: number | null;
+  stats: FleetCarStats;
+  /** Set while the car is out on a rental at this moment. */
+  onRentalUntil: string | null;
+  onRentalFor: string | null;
+  /** Rentals still ahead of it, and the first of them. */
+  upcomingCount: number;
+  nextPickupDate: string | null;
+  nextPickupFor: string | null;
+}
+
+export interface FleetOverview {
+  today: string;
+  windowDays: number;
+  /** 'YYYY-MM-DD' bounds of the stats window, both inclusive for display. */
+  windowStart: string;
+  windowEnd: string;
+  cars: FleetCarRow[];
+  totals: {
+    cars: number;
+    offRoad: number;
+    outNow: number;
+    collectedCents: number;
+    utilisationPct: number;
+  };
+}
+
+/** A rental in a car's own schedule. */
+export interface CarRental {
+  bookingId: string;
+  clientName: string;
+  pickupDate: string;
+  pickupTime: string;
+  returnDate: string;
+  returnTime: string;
+  days: number;
+  totalCents: number;
+  bookingStatus: BookingStatus;
+  paymentStatus: PaymentStatus;
+  prepStatus: PrepStatus;
+}
+
+/** One car in full: what it is, what it earns, and who has it when. */
+export interface FleetCarDetail {
+  id: string;
+  label: string;
+  model: string;
+  color: string;
+  category: string;
+  transmission: string;
+  seats: number;
+  photoUrl: string;
+  dailyRateCents: number;
+  status: CarStatus;
+  maintenanceNotes: string | null;
+  offRoadSince: string | null;
+  offRoadDays: number | null;
+  updatedAt: string;
+  today: string;
+  stats: FleetCarStats;
+
+  /** The month strip: same shape and same rules as the bookings calendar. */
+  month: string;
+  monthLabel: string;
+  days: string[];
+  prevMonth: string;
+  nextMonth: string;
+  currentMonth: string;
+  timeline: TimelineRow;
+
+  /** Out on the road right now, if it is. */
+  onRental: {
+    bookingId: string;
+    clientName: string;
+    returnDate: string;
+    returnTime: string;
+  } | null;
+  upcoming: CarRental[];
+}
+
+/**
+ * The result of a fleet write.
+ *
+ * `wentOffRoad` + `affectedRentals` exist so the page can tell the truth after
+ * the fact: the status change is applied, existing rentals are untouched, and
+ * here is how many of them there are to deal with by hand.
+ */
+export type CarWriteResult =
+  | { ok: true; carId: string; wentOffRoad: boolean; affectedRentals: number }
+  | { ok: false; reason: "not_found" | "invalid"; message: string };
+
 /** A pickup or a return on the schedule — the two halves of "what happens next". */
 export interface MovementRow {
   bookingId: string;

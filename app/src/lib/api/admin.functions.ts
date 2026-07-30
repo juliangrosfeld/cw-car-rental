@@ -31,7 +31,10 @@ import {
   setBookingAdminNotes,
   setBookingPrepStatus,
 } from "../admin/bookings.server";
+import { getFleetCar, getFleetOverview, updateCar } from "../admin/fleet.server";
+import { STATS_WINDOWS, type StatsWindow } from "../admin/fleet";
 import { PREP_FLOW } from "../admin/prep";
+import { CAR_STATUS } from "../supabase/types";
 import type { BookingFilters } from "../admin/types";
 
 const credentialsSchema = z.object({
@@ -173,4 +176,76 @@ export const updateBookingAdminNotes = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await requireAdmin();
     return setBookingAdminNotes(data);
+  });
+
+/* ── fleet ─────────────────────────────────────────────────────────────────── */
+
+const statsWindowSchema = z
+  .number()
+  .int()
+  .refine((n): n is StatsWindow => (STATS_WINDOWS as readonly number[]).includes(n), {
+    message: "Unsupported stats window",
+  })
+  .nullish();
+
+/** The fleet overview: five cars, their standing availability, and what each has
+ *  earned over the chosen window. */
+export const fetchAdminFleet = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ windowDays: statsWindowSchema }))
+  .handler(async ({ data }) => {
+    const admin = await requireAdmin();
+    return { admin, fleet: await getFleetOverview(data.windowDays) };
+  });
+
+/** One car: its details, its numbers, and its own month calendar. */
+export const fetchAdminFleetCar = createServerFn({ method: "GET" })
+  .inputValidator(
+    z.object({
+      // Car ids are FLEET slugs, not uuids, and this one comes from the address
+      // bar: an unknown slug is a miss, which getFleetCar answers with null.
+      carId: z.string().min(1).max(64),
+      month: z
+        .string()
+        .regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Expected a YYYY-MM month")
+        .nullish(),
+      windowDays: statsWindowSchema,
+    }),
+  )
+  .handler(async ({ data }) => {
+    const admin = await requireAdmin();
+    return { admin, car: await getFleetCar(data.carId, data.month, data.windowDays) };
+  });
+
+/**
+ * Edit a car: rate, standing availability, photo, maintenance notes.
+ *
+ * The rate arrives in CENTS — the form converts from the dollars an owner types,
+ * and every money value in this app is an integer of cents by the time it
+ * crosses a boundary. Returns a discriminated result so a bad rate renders in
+ * the form instead of throwing, and so the page can report how many existing
+ * rentals a car that just left the road still has.
+ */
+export const updateFleetCar = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      carId: z.string().min(1).max(64),
+      dailyRateCents: z.number().int().min(0),
+      status: z.enum(CAR_STATUS),
+      // Either a path served by this app or an absolute https URL. Kept narrow
+      // deliberately: this string is rendered as an <img src> on the public site,
+      // so `javascript:` and friends must never reach it.
+      photoUrl: z
+        .string()
+        .trim()
+        .min(1, "A car needs a photo.")
+        .max(500)
+        .refine((v) => v.startsWith("/") || v.startsWith("https://"), {
+          message: "Use a path like /assets/fleet/… or a full https:// URL.",
+        }),
+      maintenanceNotes: z.string().max(5000, "Notes are limited to 5000 characters."),
+    }),
+  )
+  .handler(async ({ data }) => {
+    await requireAdmin();
+    return updateCar(data);
   });

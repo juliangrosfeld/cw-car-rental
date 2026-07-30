@@ -44,7 +44,7 @@ import type {
 } from "../supabase/types";
 import { PREP_FLOW } from "./prep";
 import { addDays, curacaoNow, isMonthKey, monthKeyOf } from "./clock";
-import { barGeometry, monthGrid, packLanes } from "./timeline";
+import { monthGrid, packLanes, toBars, type RentalForBar } from "./timeline";
 import type {
   BookingDetail,
   BookingFilters,
@@ -146,6 +146,38 @@ function toBookingRow(raw: RawListRow): BookingRow {
   };
 }
 
+/** The board query's join result. */
+interface RawBoardRow {
+  id: string;
+  car_id: string;
+  pickup_date: string;
+  pickup_time: string;
+  return_date: string;
+  return_time: string;
+  total_price: number;
+  booking_status: BookingStatus;
+  payment_status: PaymentStatus;
+  prep_status: PrepStatus;
+  clients: { full_name: string } | null;
+}
+
+/** A booking row in the shape src/lib/admin/timeline.ts draws bars from. */
+function toRentalForBar(raw: RawBoardRow): RentalForBar {
+  return {
+    id: raw.id,
+    carId: raw.car_id,
+    clientName: raw.clients?.full_name ?? "Unknown guest",
+    pickupDate: raw.pickup_date,
+    returnDate: raw.return_date,
+    pickupTime: raw.pickup_time,
+    returnTime: raw.return_time,
+    totalCents: raw.total_price,
+    bookingStatus: raw.booking_status,
+    paymentStatus: raw.payment_status,
+    prepStatus: raw.prep_status,
+  };
+}
+
 /* ── the timeline ──────────────────────────────────────────────────────────── */
 
 /**
@@ -194,57 +226,23 @@ export async function getBookingsBoard(month?: string | null): Promise<BookingsB
     status: CarStatus;
   }[];
 
-  const raw = (bookingsRes.data ?? []) as unknown as {
-    id: string;
-    car_id: string;
-    pickup_date: string;
-    pickup_time: string;
-    return_date: string;
-    return_time: string;
-    total_price: number;
-    booking_status: BookingStatus;
-    payment_status: PaymentStatus;
-    prep_status: PrepStatus;
-    clients: { full_name: string } | null;
-  }[];
+  const raw = (bookingsRes.data ?? []) as unknown as RawBoardRow[];
+
+  // toBars applies the exact column rule and drops whatever the wider SQL
+  // window over-fetched; the fleet page builds its own timeline through the same
+  // function, which is what keeps one bar from being drawn two ways.
+  const bars = toBars(raw.map(toRentalForBar), grid);
 
   const barsByCar = new Map<string, TimelineBar[]>();
   const prepCounts = zeroPrepCounts();
-  let visibleCount = 0;
 
-  for (const b of raw) {
-    // The SQL window is deliberately a little wider than the grid (it works in
-    // whole dates, while a bar's occupied range ends the day BEFORE the return
-    // date). barGeometry applies the exact rule and returns null for a rental
-    // that turns out not to reach this month at all.
-    const geometry = barGeometry(b.pickup_date, b.return_date, grid);
-    if (!geometry) continue;
-
-    visibleCount++;
-    prepCounts[b.prep_status]++;
-
-    const bar: TimelineBar = {
-      bookingId: b.id,
-      ref: b.id.slice(0, 8),
-      clientName: b.clients?.full_name ?? "Unknown guest",
-      carId: b.car_id,
-      pickupDate: b.pickup_date,
-      returnDate: b.return_date,
-      pickupTime: b.pickup_time,
-      returnTime: b.return_time,
-      days: rentalDays(b.pickup_date, b.return_date),
-      totalCents: b.total_price,
-      bookingStatus: b.booking_status,
-      paymentStatus: b.payment_status,
-      prepStatus: b.prep_status,
-      ...geometry,
-      lane: 0,
-    };
-
-    const list = barsByCar.get(b.car_id);
+  for (const bar of bars) {
+    prepCounts[bar.prepStatus]++;
+    const list = barsByCar.get(bar.carId);
     if (list) list.push(bar);
-    else barsByCar.set(b.car_id, [bar]);
+    else barsByCar.set(bar.carId, [bar]);
   }
+  const visibleCount = bars.length;
 
   const rows: TimelineRow[] = cars.map((car) => {
     const { bars, lanes } = packLanes(barsByCar.get(car.id) ?? []);

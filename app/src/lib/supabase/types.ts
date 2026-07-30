@@ -59,6 +59,15 @@ export interface Database {
           seats: number;
           photo_url: string;
           status: CarStatus;
+          /**
+           * INTERNAL — why the car is off the road, what was done to it.
+           * The anon role holds no privilege on this column (migration 0003), so
+           * it must never be selected with the anon client and must never be put
+           * on a public payload.
+           */
+          maintenance_notes: string | null;
+          /** ISO instant the car last left 'available', or null while on the road. */
+          off_road_since: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -72,6 +81,8 @@ export interface Database {
           seats: number;
           photo_url: string;
           status?: CarStatus;
+          maintenance_notes?: string | null;
+          off_road_since?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["cars"]["Insert"]>;
         Relationships: [];

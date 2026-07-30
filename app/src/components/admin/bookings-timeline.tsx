@@ -20,7 +20,7 @@ import { Link } from "@tanstack/react-router";
 
 import { formatDate, formatDateShort, formatMoney, formatTime } from "../../lib/admin/format";
 import { PREP_LABEL } from "../../lib/admin/prep";
-import type { BookingsBoardData, TimelineBar } from "../../lib/admin/types";
+import type { BookingsBoardData, TimelineBar, TimelineRow } from "../../lib/admin/types";
 import { EmptyState, StatusPill, toneBarClass } from "./ui";
 
 /** Width of the pinned car column, and the minimum a day column may shrink to
@@ -92,22 +92,41 @@ function Bar({ bar }: { bar: TimelineBar }) {
   );
 }
 
-export default function BookingsTimeline({ board }: { board: BookingsBoardData }) {
-  const { days, rows, today } = board;
+/**
+ * The grid itself, given days and rows. Split out from the bookings page's
+ * wrapper so the fleet page can draw ONE car's month with the same geometry,
+ * the same colours and the same clipping rules — a car's schedule and the fleet
+ * calendar must never disagree about where a bar starts.
+ */
+export function TimelineGrid({
+  days,
+  rows,
+  today,
+  showCarColumn = true,
+}: {
+  days: string[];
+  rows: TimelineRow[];
+  today: string;
+  /** Off on a single-car page, where every row would repeat the same name. */
+  showCarColumn?: boolean;
+}) {
+  const labelWidth = showCarColumn ? CAR_COL : 0;
   const gridColumns = `repeat(${days.length}, minmax(${MIN_DAY_COL}px, 1fr))`;
-  const minWidth = CAR_COL + days.length * MIN_DAY_COL;
+  const minWidth = labelWidth + days.length * MIN_DAY_COL;
 
   return (
     <div className="overflow-x-auto">
       <div style={{ minWidth }}>
         {/* ── day headers ──────────────────────────────────────────────── */}
         <div className="flex border-b border-cw-navy/10">
-          <div
-            style={{ width: CAR_COL }}
-            className="sticky left-0 z-30 shrink-0 border-r border-cw-navy/10 bg-white px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.07em] text-cw-ink/50"
-          >
-            Car
-          </div>
+          {showCarColumn && (
+            <div
+              style={{ width: CAR_COL }}
+              className="sticky left-0 z-30 shrink-0 border-r border-cw-navy/10 bg-white px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.07em] text-cw-ink/50"
+            >
+              Car
+            </div>
+          )}
           <div className="grid flex-1" style={{ gridTemplateColumns: gridColumns }}>
             {days.map((day) => {
               const isToday = day === today;
@@ -141,26 +160,28 @@ export default function BookingsTimeline({ board }: { board: BookingsBoardData }
         {/* ── one row per car ──────────────────────────────────────────── */}
         {rows.map((row) => (
           <div key={row.carId} className="flex border-b border-cw-navy/8 last:border-b-0">
-            <div
-              style={{ width: CAR_COL }}
-              className="sticky left-0 z-30 flex shrink-0 flex-col justify-center border-r border-cw-navy/10 bg-white px-3 py-2"
-            >
-              <span
-                className="truncate text-[12px] font-semibold text-cw-navy"
-                title={row.carLabel}
+            {showCarColumn && (
+              <div
+                style={{ width: CAR_COL }}
+                className="sticky left-0 z-30 flex shrink-0 flex-col justify-center border-r border-cw-navy/10 bg-white px-3 py-2"
               >
-                {row.carLabel}
-              </span>
-              <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-cw-ink/45">
-                {row.carStatus !== "available" ? (
-                  <StatusPill value={row.carStatus} title="Fleet status" />
-                ) : (
-                  <>
-                    {row.bars.length} {row.bars.length === 1 ? "booking" : "bookings"}
-                  </>
-                )}
-              </span>
-            </div>
+                <span
+                  className="truncate text-[12px] font-semibold text-cw-navy"
+                  title={row.carLabel}
+                >
+                  {row.carLabel}
+                </span>
+                <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-cw-ink/45">
+                  {row.carStatus !== "available" ? (
+                    <StatusPill value={row.carStatus} title="Fleet status" />
+                  ) : (
+                    <>
+                      {row.bars.length} {row.bars.length === 1 ? "booking" : "bookings"}
+                    </>
+                  )}
+                </span>
+              </div>
+            )}
 
             <div
               className="relative grid flex-1"
@@ -198,6 +219,11 @@ export default function BookingsTimeline({ board }: { board: BookingsBoardData }
       </div>
     </div>
   );
+}
+
+/** The bookings page's whole-fleet month: every car, one row each. */
+export default function BookingsTimeline({ board }: { board: BookingsBoardData }) {
+  return <TimelineGrid days={board.days} rows={board.rows} today={board.today} />;
 }
 
 /**
