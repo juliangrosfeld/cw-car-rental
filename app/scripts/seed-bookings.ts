@@ -88,6 +88,20 @@ interface Fixture {
     /** Offset in days from today; negative means already expired. */
     licenseExpiryDays?: number;
     country?: string;
+    /**
+     * Reuse the guest row created by an earlier fixture with the same key,
+     * instead of inserting another one. This mirrors what the real booking path
+     * does — findOrCreateClient reuses a guest whose email matches — and is how
+     * the fixture set grows repeat customers rather than a directory of
+     * one-booking strangers.
+     */
+    reuseKey?: string;
+    /**
+     * Force an address. Two DIFFERENT guest rows sharing one address is the
+     * duplicate case the client page has to surface, and it cannot be built
+     * while every address is derived from the name.
+     */
+    email?: string;
   };
   carId: string;
   pickupOffset: number;
@@ -114,6 +128,7 @@ const FIXTURES: Fixture[] = [
     exercises: "In progress right now, running into next month — 'out' prep, clipped right edge",
     guest: {
       name: "Marieke van Dijk",
+      reuseKey: "marieke",
       phone: "+31 6 2244 8890",
       licenseNumber: "NL-8842119",
       licenseExpiryDays: 900,
@@ -136,6 +151,7 @@ const FIXTURES: Fixture[] = [
     exercises: "Tomorrow's pickup, still needs prep and STILL UNPAID — the row to spot on a Monday",
     guest: {
       name: "Andre Martis",
+      reuseKey: "andre",
       phone: "+599 9 512 8823",
       licenseNumber: "CW-114882",
       licenseExpiryDays: 420,
@@ -180,6 +196,7 @@ const FIXTURES: Fixture[] = [
       "First half of a back-to-back on one car: hands the keys back the day the next guest collects",
     guest: {
       name: "Sofia Ramirez",
+      reuseKey: "sofia",
       phone: "+57 310 774 2288",
       licenseNumber: "CO-99231774",
       licenseExpiryDays: 300,
@@ -279,6 +296,7 @@ const FIXTURES: Fixture[] = [
     exercises: "Finished and checked in — 'returned' prep on a completed booking",
     guest: {
       name: "Emily Carter",
+      reuseKey: "emily",
       phone: "+1 416 778 3320",
       licenseNumber: "ON-C7741208",
       licenseExpiryDays: 1500,
@@ -373,6 +391,186 @@ const FIXTURES: Fixture[] = [
     paymentStatus: "paid",
     prepStatus: "returned",
   },
+  {
+    exercises: "Repeat customer: Marieke's first rental with CW, four months back",
+    guest: {
+      name: "Marieke van Dijk",
+      reuseKey: "marieke",
+      phone: "+31 6 2244 8890",
+      licenseNumber: "NL-8842119",
+      licenseExpiryDays: 900,
+      country: "Netherlands",
+    },
+    carId: "hyundai-venue-red",
+    pickupOffset: -120,
+    returnOffset: -113,
+    pickupLocation: AIRPORT,
+    returnLocation: AIRPORT,
+    flightNumber: "KL735",
+    bookingStatus: "completed",
+    paymentStatus: "paid",
+    prepStatus: "returned",
+  },
+  {
+    exercises: "…and her second, on a different car — three rentals makes her the top repeat guest",
+    guest: {
+      name: "Marieke van Dijk",
+      reuseKey: "marieke",
+      phone: "+31 6 2244 8890",
+      country: "Netherlands",
+    },
+    carId: "nissan-versa-red",
+    pickupOffset: -75,
+    returnOffset: -68,
+    pickupLocation: AIRPORT,
+    returnLocation: PUNDA,
+    bookingStatus: "completed",
+    paymentStatus: "paid",
+    prepStatus: "returned",
+  },
+  {
+    exercises: "Repeat local: Andre's earlier rental",
+    guest: {
+      name: "Andre Martis",
+      reuseKey: "andre",
+      phone: "+599 9 512 8823",
+      country: "Curaçao",
+    },
+    carId: "mazda-3-grey",
+    pickupOffset: -95,
+    returnOffset: -88,
+    pickupLocation: PUNDA,
+    returnLocation: PUNDA,
+    bookingStatus: "completed",
+    paymentStatus: "paid",
+    prepStatus: "returned",
+  },
+  {
+    exercises: "…and another, so his record shows three and an unpaid one outstanding",
+    guest: {
+      name: "Andre Martis",
+      reuseKey: "andre",
+      phone: "+599 9 512 8823",
+      country: "Curaçao",
+    },
+    carId: "mazda-3-grey",
+    pickupOffset: -60,
+    returnOffset: -52,
+    pickupLocation: PUNDA,
+    returnLocation: JAN_THIEL,
+    bookingStatus: "completed",
+    paymentStatus: "paid",
+    prepStatus: "returned",
+  },
+  {
+    exercises: "Repeat visitor: Emily's previous trip, on a different car",
+    guest: {
+      name: "Emily Carter",
+      reuseKey: "emily",
+      phone: "+1 416 778 3320",
+      country: "Canada",
+    },
+    carId: "chevrolet-spark-black",
+    pickupOffset: -110,
+    returnOffset: -100,
+    pickupLocation: AIRPORT,
+    returnLocation: AIRPORT,
+    bookingStatus: "completed",
+    paymentStatus: "paid",
+    prepStatus: "returned",
+  },
+  {
+    exercises: "Repeat visitor: Sofia's earlier rental",
+    guest: {
+      name: "Sofia Ramirez",
+      reuseKey: "sofia",
+      phone: "+57 310 774 2288",
+      country: "Colombia",
+    },
+    carId: "nissan-versa-silver",
+    pickupOffset: -50,
+    returnOffset: -44,
+    pickupLocation: AIRPORT,
+    returnLocation: AIRPORT,
+    bookingStatus: "completed",
+    paymentStatus: "paid",
+    prepStatus: "returned",
+  },
+  {
+    exercises:
+      "DUPLICATE BY EMAIL: same address as Thomas Bergmann, spelt differently, different phone — the mismatch the client page must surface rather than merge",
+    guest: {
+      name: "Tomas Bergman",
+      email: "thomas.bergmann@fixture.invalid",
+      phone: "+49 171 553 9099",
+      licenseNumber: "DE-B7741992",
+      licenseExpiryDays: 640,
+      country: "Germany",
+    },
+    carId: "chevrolet-spark-black",
+    pickupOffset: -70,
+    returnOffset: -64,
+    pickupLocation: AIRPORT,
+    returnLocation: AIRPORT,
+    bookingStatus: "completed",
+    paymentStatus: "paid",
+    prepStatus: "returned",
+  },
+  {
+    exercises:
+      "DUPLICATE BY PHONE: Robert's number under a different name and address — matched on the last 8 digits",
+    guest: {
+      name: "R. Nieuwenhuis",
+      phone: "+31 6 1188 4420",
+      country: "Netherlands",
+    },
+    carId: "hyundai-venue-red",
+    pickupOffset: -60,
+    returnOffset: -55,
+    pickupLocation: AIRPORT,
+    returnLocation: AIRPORT,
+    bookingStatus: "completed",
+    paymentStatus: "paid",
+    prepStatus: "returned",
+  },
+  {
+    exercises: "EXPIRED licence — they cannot legally drive until it is renewed",
+    guest: {
+      name: "Wilhelmina Cijntje",
+      phone: "+599 9 690 4412",
+      licenseNumber: "CW-330214",
+      licenseExpiryDays: -20,
+      country: "Curaçao",
+    },
+    carId: "mazda-3-grey",
+    pickupOffset: -40,
+    returnOffset: -33,
+    pickupLocation: PUNDA,
+    returnLocation: PUNDA,
+    bookingStatus: "completed",
+    paymentStatus: "paid",
+    prepStatus: "returned",
+  },
+  {
+    exercises: "Licence EXPIRING inside the warning window, with a rental booked ahead of it",
+    guest: {
+      name: "Peter Halvorsen",
+      phone: "+47 918 22 447",
+      licenseNumber: "NO-4471223",
+      licenseExpiryDays: 25,
+      country: "Norway",
+    },
+    carId: "nissan-versa-silver",
+    pickupOffset: 14,
+    returnOffset: 20,
+    pickupLocation: AIRPORT,
+    returnLocation: AIRPORT,
+    flightNumber: "SK1451",
+    bookingStatus: "confirmed",
+    paymentStatus: "unpaid",
+    prepStatus: "booked",
+    specialRequests: "Two child seats if possible.",
+  },
 ];
 
 /* ── seeding ───────────────────────────────────────────────────────────────── */
@@ -445,6 +643,8 @@ async function seed() {
   // does not reject the same dates on a second run.
   await clear(true);
 
+  /** reuseKey → the client row created for it. */
+  const guestsByKey = new Map<string, string>();
   const rows: { label: string; total: number; pickup: string; return: string }[] = [];
 
   for (const fixture of FIXTURES) {
@@ -454,29 +654,39 @@ async function seed() {
     const pickupDate = day(fixture.pickupOffset);
     const returnDate = day(fixture.returnOffset);
 
-    const { data: client, error: clientError } = await db
-      .from("clients")
-      .insert({
-        full_name: fixture.guest.name,
-        phone: fixture.guest.phone,
-        email: fixtureEmail(fixture.guest.name),
-        license_number: fixture.guest.licenseNumber ?? null,
-        license_expiry:
-          fixture.guest.licenseExpiryDays === undefined
-            ? null
-            : day(fixture.guest.licenseExpiryDays),
-        country_of_residence: fixture.guest.country ?? null,
-      })
-      .select("id")
-      .single();
-    if (clientError || !client) fail(`Could not create fixture guest: ${clientError?.message}`);
+    // A repeat customer is one guest row with several bookings, exactly as the
+    // booking path produces: the second booking finds the existing row rather
+    // than writing a new one.
+    let clientId = fixture.guest.reuseKey ? guestsByKey.get(fixture.guest.reuseKey) : undefined;
+
+    if (!clientId) {
+      const { data: client, error: clientError } = await db
+        .from("clients")
+        .insert({
+          full_name: fixture.guest.name,
+          phone: fixture.guest.phone,
+          email: fixture.guest.email ?? fixtureEmail(fixture.guest.name),
+          license_number: fixture.guest.licenseNumber ?? null,
+          license_expiry:
+            fixture.guest.licenseExpiryDays === undefined
+              ? null
+              : day(fixture.guest.licenseExpiryDays),
+          country_of_residence: fixture.guest.country ?? null,
+        })
+        .select("id")
+        .single();
+      if (clientError || !client) fail(`Could not create fixture guest: ${clientError?.message}`);
+
+      clientId = client.id;
+      if (fixture.guest.reuseKey) guestsByKey.set(fixture.guest.reuseKey, clientId);
+    }
 
     // THE price rule, not a made-up number: daily_rate from the database times
     // billable days, exactly what the public booking flow computes.
     const { totalCents } = quote(car.daily_rate, pickupDate, returnDate);
 
     const { error: bookingError } = await db.from("bookings").insert({
-      client_id: client.id,
+      client_id: clientId,
       car_id: fixture.carId,
       pickup_date: pickupDate,
       pickup_time: fixture.pickupTime ?? "10:00:00",

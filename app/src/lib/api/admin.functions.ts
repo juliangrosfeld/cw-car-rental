@@ -31,11 +31,12 @@ import {
   setBookingAdminNotes,
   setBookingPrepStatus,
 } from "../admin/bookings.server";
+import { getClientDetail, getClientsList } from "../admin/clients.server";
 import { getFleetCar, getFleetOverview, updateCar } from "../admin/fleet.server";
 import { STATS_WINDOWS, type StatsWindow } from "../admin/fleet";
 import { PREP_FLOW } from "../admin/prep";
 import { CAR_STATUS } from "../supabase/types";
-import type { BookingFilters } from "../admin/types";
+import type { BookingFilters, ClientFilter } from "../admin/types";
 
 const credentialsSchema = z.object({
   email: z
@@ -176,6 +177,44 @@ export const updateBookingAdminNotes = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await requireAdmin();
     return setBookingAdminNotes(data);
+  });
+
+/* ── clients ───────────────────────────────────────────────────────────────── */
+
+/**
+ * The client directory. Search and filter are applied server-side inside
+ * getClientsList — see the note there on why matching happens in TypeScript
+ * rather than in `ilike`.
+ */
+export const fetchAdminClients = createServerFn({ method: "GET" })
+  .inputValidator(
+    z.object({
+      // Bounded so a pasted essay cannot become a query. Trimming and matching
+      // are the aggregate's job.
+      query: z.string().max(120).nullish(),
+      filter: z.enum(["all", "repeat", "licence", "duplicates"]).nullish(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const admin = await requireAdmin();
+    return {
+      admin,
+      list: await getClientsList({
+        query: data.query ?? "",
+        filter: (data.filter ?? "all") as ClientFilter,
+      }),
+    };
+  });
+
+/**
+ * One client in full: profile, every booking they have, lifetime value, and any
+ * other records that look like the same person. `client: null` for a stale link.
+ */
+export const fetchAdminClient = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ clientId: z.string().min(1).max(64) }))
+  .handler(async ({ data }) => {
+    const admin = await requireAdmin();
+    return { admin, client: await getClientDetail(data.clientId) };
   });
 
 /* ── fleet ─────────────────────────────────────────────────────────────────── */

@@ -13,6 +13,7 @@
  */
 
 import type { BookingStatus, CarStatus, PaymentStatus, PrepStatus } from "../supabase/types";
+import type { LicenceLevel } from "./clients";
 
 /**
  * The signed-in admin, as the UI sees them. Lives here rather than beside the
@@ -221,6 +222,137 @@ export type BookingWriteResult =
   | { ok: true; booking: BookingDetail }
   | { ok: false; reason: "not_found"; message: string }
   | { ok: false; reason: "stale"; message: string; booking: BookingDetail };
+
+/* ── clients ───────────────────────────────────────────────────────────────── */
+
+/**
+ * What a client is worth, and on what basis.
+ *
+ * TWO FIGURES, NOT ONE, for the same reason the dashboard carries two: money
+ * TAKEN and money PROMISED answer different questions and must not be added
+ * together behind one word. `paidCents` is what has actually been collected
+ * from this person; `outstandingCents` is what they are booked for and have not
+ * paid yet. A guest with $1,200 outstanding and nothing paid is not a $1,200
+ * customer, and the UI never implies they are.
+ *
+ * Cancelled bookings contribute to neither, and are counted separately so the
+ * record still shows they happened.
+ */
+export interface ClientValue {
+  /** Non-cancelled bookings. This is what decides the repeat badge. */
+  rentals: number;
+  cancelled: number;
+  /** Collected: paid, non-cancelled bookings. */
+  paidCents: number;
+  /** Booked and not yet paid — unpaid or pending, non-cancelled. */
+  outstandingCents: number;
+  /** 'YYYY-MM-DD' of their first and most recent pickup, non-cancelled. */
+  firstPickup: string | null;
+  lastPickup: string | null;
+  /** The furthest-out return they have on the books, for the licence check. */
+  lastReturn: string | null;
+  /** Rentals that have not finished yet. */
+  upcoming: number;
+}
+
+/** One client in the list. */
+export interface ClientRow {
+  id: string;
+  fullName: string;
+  email: string;
+  phone: string;
+  countryOfResidence: string | null;
+  licenseExpiry: string | null;
+  licenceLevel: LicenceLevel;
+  /** Computed from `value.rentals`, never stored — see ./clients.ts. */
+  isRepeat: boolean;
+  value: ClientValue;
+  /** How many other client rows look like the same person. 0 for almost all. */
+  possibleDuplicates: number;
+  createdAt: string;
+}
+
+export interface ClientsListData {
+  /** Echoed back so the page can describe what it is showing. */
+  query: string;
+  filter: ClientFilter;
+  rows: ClientRow[];
+  /** Matching the filters, before the display cap. */
+  total: number;
+  /** Every client, regardless of filter — the chip counts. */
+  totals: {
+    clients: number;
+    repeat: number;
+    licenceAttention: number;
+    duplicates: number;
+  };
+  truncated: boolean;
+  today: string;
+}
+
+export type ClientFilter = "all" | "repeat" | "licence" | "duplicates";
+
+/** One booking on a client's history. */
+export interface ClientBooking {
+  id: string;
+  ref: string;
+  carLabel: string;
+  pickupDate: string;
+  pickupTime: string;
+  returnDate: string;
+  returnTime: string;
+  days: number;
+  totalCents: number;
+  bookingStatus: BookingStatus;
+  paymentStatus: PaymentStatus;
+  prepStatus: PrepStatus;
+  createdAt: string;
+  /** Not finished yet — return still ahead, or the car is still out. */
+  isOpen: boolean;
+}
+
+/**
+ * Another client row that looks like the same person, and what differs.
+ *
+ * Surfaced, never resolved: the booking path reuses a guest row rather than
+ * overwriting it, so a mismatch here is a real difference between what two
+ * bookings were given, and only a human knows which is current.
+ */
+export interface DuplicateCandidate {
+  id: string;
+  fullName: string;
+  email: string;
+  phone: string;
+  rentals: number;
+  createdAt: string;
+  /** Why they were matched. */
+  matchedOn: { email: boolean; phone: boolean };
+  /** Fields that differ between the two records, for the admin to judge. */
+  differs: ("name" | "email" | "phone" | "licence")[];
+}
+
+export interface ClientDetail {
+  id: string;
+  fullName: string;
+  email: string;
+  phone: string;
+  licenseNumber: string | null;
+  licenseExpiry: string | null;
+  dateOfBirth: string | null;
+  countryOfResidence: string | null;
+  createdAt: string;
+  updatedAt: string;
+
+  today: string;
+  isRepeat: boolean;
+  licenceLevel: LicenceLevel;
+  value: ClientValue;
+  /** Every booking they have, newest pickup first, cancellations included. */
+  bookings: ClientBooking[];
+  /** Cars they have taken, most rented first — what to offer them next. */
+  favouriteCars: { carId: string; carLabel: string; rentals: number }[];
+  duplicates: DuplicateCandidate[];
+}
 
 /* ── fleet ─────────────────────────────────────────────────────────────────── */
 
