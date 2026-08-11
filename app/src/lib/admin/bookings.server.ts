@@ -40,6 +40,7 @@ import type {
   CarStatus,
   PaymentStatus,
   PrepStatus,
+  RentalTypeValue,
   Transmission,
 } from "../supabase/types";
 import { PREP_FLOW } from "./prep";
@@ -338,6 +339,9 @@ interface RawDetailRow {
   return_location: string;
   flight_number: string | null;
   total_price: number;
+  rental_type: RentalTypeValue;
+  discount_pct: number;
+  discount_cents: number;
   booking_status: BookingStatus;
   payment_status: PaymentStatus;
   prep_status: PrepStatus;
@@ -355,6 +359,7 @@ interface RawDetailRow {
     seats: number;
     status: CarStatus;
     daily_rate: number;
+    monthly_rate: number;
   } | null;
   clients: {
     id: string;
@@ -396,6 +401,7 @@ function toBookingDetail(raw: RawDetailRow): BookingDetail {
       seats: car?.seats ?? 0,
       status: car?.status ?? "available",
       dailyRateCents: car?.daily_rate ?? 0,
+      monthlyRateCents: car?.monthly_rate ?? 0,
     },
     pickupDate: raw.pickup_date,
     pickupTime: raw.pickup_time,
@@ -405,11 +411,18 @@ function toBookingDetail(raw: RawDetailRow): BookingDetail {
     returnLocation: raw.return_location,
     flightNumber: raw.flight_number,
     days,
-    // What this rental was actually charged per day. total_price is the quote
-    // that was struck at booking time and is authoritative; the car's current
-    // daily_rate may since have changed, and the detail view says so rather
-    // than recomputing a total nobody agreed to.
-    quotedPerDayCents: Math.round(raw.total_price / days),
+    rentalType: raw.rental_type,
+    discountPct: raw.discount_pct,
+    discountCents: raw.discount_cents,
+    // The pre-discount figure, reconstructed from what was STORED rather than
+    // re-multiplied from a rate: total_price is already net of the discount, so
+    // total + discount is the subtotal exactly, with no rounding to argue about.
+    subtotalCents: raw.total_price + raw.discount_cents,
+    // What this rental was charged per day at list, before the discount.
+    // total_price is the quote that was struck at booking time and is
+    // authoritative; the car's current daily_rate may since have changed, and
+    // the detail view says so rather than recomputing a total nobody agreed to.
+    quotedPerDayCents: Math.round((raw.total_price + raw.discount_cents) / days),
     totalCents: raw.total_price,
     bookingStatus: raw.booking_status,
     paymentStatus: raw.payment_status,

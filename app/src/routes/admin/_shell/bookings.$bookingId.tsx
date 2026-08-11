@@ -85,7 +85,11 @@ function BookingDetailPage() {
     );
   }
 
-  const rateChanged = booking.quotedPerDayCents !== booking.car.dailyRateCents;
+  const monthly = booking.rentalType === "monthly";
+  // Only meaningful for a daily rental: a monthly booking has no per-day price
+  // to compare, so comparing one would manufacture a warning out of nothing.
+  const rateChanged = !monthly && booking.quotedPerDayCents !== booking.car.dailyRateCents;
+  const monthlyRateChanged = monthly && booking.totalCents !== booking.car.monthlyRateCents;
 
   return (
     <AdminShell
@@ -187,6 +191,19 @@ function BookingDetailPage() {
               value={`${booking.days} ${booking.days === 1 ? "day" : "days"}`}
               mono
             />
+            {/* Which product was sold, said plainly. Two rentals of the same
+                length can be two different things at two different prices. */}
+            <Field
+              label="Rental type"
+              value={monthly ? "Monthly · flat rate" : "Daily · per day"}
+              hint={
+                monthly
+                  ? "Booked at the car's monthly rate. Length discounts do not apply on top."
+                  : booking.discountPct > 0
+                    ? `${booking.discountPct}% long stay discount applied`
+                    : "No length discount applied"
+              }
+            />
             <Field label="Car" value={booking.car.label} />
             <Field
               label="Car detail"
@@ -202,17 +219,52 @@ function BookingDetailPage() {
               {formatMoneyExact(booking.totalCents)}
             </p>
             <p className="mt-1 text-[12px] text-cw-ink/55">
-              {formatMoney(booking.quotedPerDayCents)} × {booking.days}{" "}
-              {booking.days === 1 ? "day" : "days"}, quoted when the booking was taken
+              {monthly ? (
+                <>
+                  Flat monthly rate over {booking.days} days, quoted when the booking was taken
+                </>
+              ) : (
+                <>
+                  {formatMoney(booking.quotedPerDayCents)} × {booking.days}{" "}
+                  {booking.days === 1 ? "day" : "days"}, quoted when the booking was taken
+                </>
+              )}
             </p>
+
+            {/* The discount is shown as a line of arithmetic, not as a badge:
+                the useful question in the back office is "what did they pay and
+                what came off", and a percentage alone cannot answer it. */}
+            {booking.discountCents > 0 && (
+              <div className="mt-2 space-y-1 rounded-lg bg-cw-teal-soft/50 px-2.5 py-2 text-[12px]">
+                <div className="flex justify-between">
+                  <span className="text-cw-ink/60">Before discount</span>
+                  <span className="tabular-nums text-cw-ink/70">
+                    {formatMoneyExact(booking.subtotalCents)}
+                  </span>
+                </div>
+                <div className="flex justify-between font-semibold text-[#1a7a45]">
+                  <span>{booking.discountPct}% long stay discount</span>
+                  <span className="tabular-nums">−{formatMoneyExact(booking.discountCents)}</span>
+                </div>
+              </div>
+            )}
 
             {/* The total is what was agreed and is never recomputed. If the car's
                 rate has moved since, say so plainly instead of silently showing a
-                per-day figure that does not match today's price list. */}
+                figure that does not match today's price list. */}
             {rateChanged && (
               <p className="mt-2 rounded-lg bg-cw-yellow-soft px-2.5 py-1.5 text-[12px] text-[#8a6a04]">
                 This car now rents at {formatMoney(booking.car.dailyRateCents)} a day. The total
                 above is the quote that was agreed and has not been changed.
+              </p>
+            )}
+            {monthlyRateChanged && (
+              <p className="mt-2 rounded-lg bg-cw-yellow-soft px-2.5 py-1.5 text-[12px] text-[#8a6a04]">
+                This car&rsquo;s monthly rate is now{" "}
+                {booking.car.monthlyRateCents > 0
+                  ? formatMoney(booking.car.monthlyRateCents)
+                  : "unset (not offered monthly)"}
+                . The total above is the quote that was agreed and has not been changed.
               </p>
             )}
 

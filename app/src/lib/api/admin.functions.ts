@@ -321,10 +321,10 @@ export const fetchAdminFleetCar = createServerFn({ method: "GET" })
   });
 
 /**
- * Edit a car: rate, standing availability, photo, maintenance notes.
+ * Edit a car: rates, standing availability, photo, maintenance notes.
  *
- * The rate arrives in CENTS — the form converts from the dollars an owner types,
- * and every money value in this app is an integer of cents by the time it
+ * Both rates arrive in CENTS — the form converts from the guilders an owner
+ * types, and every money value in this app is an integer of cents by the time it
  * crosses a boundary. Returns a discriminated result so a bad rate renders in
  * the form instead of throwing, and so the page can report how many existing
  * rentals a car that just left the road still has.
@@ -334,6 +334,9 @@ export const updateFleetCar = createServerFn({ method: "POST" })
     z.object({
       carId: z.string().min(1).max(64),
       dailyRateCents: z.number().int().min(0),
+      // 0 is meaningful, not missing: it takes the car off the monthly product
+      // while leaving its daily availability alone.
+      monthlyRateCents: z.number().int().min(0),
       status: z.enum(CAR_STATUS),
       // Either a path served by this app or an absolute https URL. Kept narrow
       // deliberately: this string is rendered as an <img src> on the public site,

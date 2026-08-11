@@ -5,9 +5,15 @@
  * than they look, so both say so on screen rather than in a comment only a
  * developer reads:
  *
- *   Rate    changes what FUTURE bookings are quoted. It cannot reprice a
+ *   Rates   change what FUTURE bookings are quoted. Neither can reprice a
  *           reservation that already exists — `bookings.total_price` was struck
  *           when the booking was taken and nothing recomputes it.
+ *
+ *           There are two, because there are two products: a daily rate that
+ *           length discounts come off, and a flat monthly rate that they do not
+ *           (it is already the long-stay price). A monthly rate of zero means
+ *           the car is not offered by the month at all, which the form says in
+ *           words rather than leaving an owner to infer from a blank.
  *
  *   Standing availability   anything other than "on the road" removes the car
  *           from the booking page for every future date at once. It does NOT
@@ -47,12 +53,17 @@ import {
 } from "../../../lib/admin/fleet";
 import { isMonthKey } from "../../../lib/admin/clock";
 import {
+  CURRENCY_CODE,
   formatDate,
   formatDateShort,
   formatInstant,
   formatMoney,
   formatTime,
 } from "../../../lib/admin/format";
+import {
+  DISCOUNT_TIER_SUMMARY,
+  MONTHLY_PERIOD_DAYS,
+} from "../../../lib/booking/rental";
 import type { CarStatus } from "../../../lib/supabase/types";
 import type { FleetCarDetail } from "../../../lib/admin/types";
 
@@ -111,7 +122,9 @@ function CarPage() {
       title={car.label}
       subtitle={`${car.category} · ${car.transmission} · ${car.seats} seats · ${formatMoney(
         car.dailyRateCents,
-      )} a day`}
+      )} a day · ${
+        car.monthlyRateCents > 0 ? `${formatMoney(car.monthlyRateCents)} a month` : "no monthly rate"
+      }`}
       actions={
         <div className="flex items-center gap-2">
           <StatusPill value={car.status} title="Standing availability" />
@@ -369,10 +382,10 @@ function CarMonthNav({ car, search }: { car: FleetCarDetail; search: CarSearch }
 /* ── the editor ────────────────────────────────────────────────────────────── */
 
 /**
- * Rate, standing availability, photo and maintenance notes.
+ * Rates, standing availability, photo and maintenance notes.
  *
- * MONEY IS TYPED IN DOLLARS AND STORED IN CENTS. The conversion happens here,
- * once, on submit — nobody types 5500 into a field labelled "rate". A value that
+ * MONEY IS TYPED IN GUILDERS AND STORED IN CENTS. The conversion happens here,
+ * once, on submit — nobody types 6000 into a field labelled "rate". A value that
  * does not parse is refused in the form rather than being sent as NaN.
  *
  * The whole form is keyed on the car's updated_at by its parent, so a successful
@@ -382,7 +395,10 @@ function CarMonthNav({ car, search }: { car: FleetCarDetail; search: CarSearch }
 function CarEditor({ car }: { car: FleetCarDetail }) {
   const router = useRouter();
 
-  const [rate, setRate] = useState((car.dailyRateCents / 100).toString());
+  const asField = (cents: number) => (cents / 100).toString();
+
+  const [rate, setRate] = useState(asField(car.dailyRateCents));
+  const [monthlyRate, setMonthlyRate] = useState(asField(car.monthlyRateCents));
   const [status, setStatus] = useState<CarStatus>(car.status);
   const [photoUrl, setPhotoUrl] = useState(car.photoUrl);
   const [notes, setNotes] = useState(car.maintenanceNotes ?? "");
@@ -391,7 +407,8 @@ function CarEditor({ car }: { car: FleetCarDetail }) {
   const [saved, setSaved] = useState<string | null>(null);
 
   const dirty =
-    rate !== (car.dailyRateCents / 100).toString() ||
+    rate !== asField(car.dailyRateCents) ||
+    monthlyRate !== asField(car.monthlyRateCents) ||
     status !== car.status ||
     photoUrl !== car.photoUrl ||
     notes.trim() !== (car.maintenanceNotes ?? "").trim();
@@ -407,13 +424,17 @@ function CarEditor({ car }: { car: FleetCarDetail }) {
 
     // Parsed here so a typo never becomes a price. `Number("")` is 0, which is a
     // legitimate rate to type but not a legitimate blank, so the empty string is
-    // rejected explicitly.
-    const dollars = Number(rate.trim());
-    if (rate.trim() === "" || !Number.isFinite(dollars) || dollars < 0) {
-      setError("Enter the daily rate in dollars, e.g. 55 or 52.50.");
+    // rejected explicitly — for both fields.
+    const guilders = Number(rate.trim());
+    if (rate.trim() === "" || !Number.isFinite(guilders) || guilders < 0) {
+      setError("Enter the daily rate in guilders, e.g. 70 or 62.50.");
       return;
     }
-    const cents = Math.round(dollars * 100);
+    const monthlyGuilders = Number(monthlyRate.trim());
+    if (monthlyRate.trim() === "" || !Number.isFinite(monthlyGuilders) || monthlyGuilders < 0) {
+      setError("Enter the monthly rate in guilders, or 0 if this car is not rented by the month.");
+      return;
+    }
 
     setBusy(true);
     setError(null);
@@ -422,7 +443,8 @@ function CarEditor({ car }: { car: FleetCarDetail }) {
       const result = await updateFleetCar({
         data: {
           carId: car.id,
-          dailyRateCents: cents,
+          dailyRateCents: Math.round(guilders * 100),
+          monthlyRateCents: Math.round(monthlyGuilders * 100),
           status,
           photoUrl,
           maintenanceNotes: notes,
@@ -451,13 +473,13 @@ function CarEditor({ car }: { car: FleetCarDetail }) {
   return (
     <Panel className="lg:col-span-2" title="Edit this car">
       <div className="grid gap-4 px-4 py-4 sm:grid-cols-2">
-        {/* ── rate ─────────────────────────────────────────────────────── */}
+        {/* ── the two rates ────────────────────────────────────────────── */}
         <label className="block">
           <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-cw-ink/50">
             Daily rate
           </span>
           <span className="mt-1 flex items-center gap-2">
-            <span className="text-[14px] font-semibold text-cw-ink/60">$</span>
+            <span className="text-[13px] font-semibold text-cw-ink/60">{CURRENCY_CODE}</span>
             <input
               inputMode="decimal"
               value={rate}
@@ -467,13 +489,48 @@ function CarEditor({ car }: { car: FleetCarDetail }) {
               }}
               className={inputClass}
             />
+            <span className="whitespace-nowrap text-[12px] text-cw-ink/50">/ day</span>
           </span>
           <span className="mt-1 block text-[11px] text-cw-ink/50">
-            {car.upcoming.length === 0
-              ? "Applies to new bookings only. A reservation always keeps the price it was quoted."
-              : `Applies to new bookings only. The ${car.upcoming.length} already on the books keep the price they were quoted.`}
+            The list rate. Length discounts ({DISCOUNT_TIER_SUMMARY}) come off this automatically at
+            checkout, so do not build them in here.
           </span>
         </label>
+
+        <label className="block">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-cw-ink/50">
+            Monthly rate
+          </span>
+          <span className="mt-1 flex items-center gap-2">
+            <span className="text-[13px] font-semibold text-cw-ink/60">{CURRENCY_CODE}</span>
+            <input
+              inputMode="decimal"
+              value={monthlyRate}
+              onChange={(e) => {
+                setMonthlyRate(e.target.value);
+                setSaved(null);
+              }}
+              className={inputClass}
+            />
+            <span className="whitespace-nowrap text-[12px] text-cw-ink/50">
+              / {MONTHLY_PERIOD_DAYS} days
+            </span>
+          </span>
+          <span className="mt-1 block text-[11px] text-cw-ink/50">
+            A flat price for a {MONTHLY_PERIOD_DAYS} day rental, with no further discount on top.
+            Set 0 to stop offering this car by the month.
+          </span>
+        </label>
+
+        {/* Said once, under both fields, because it is true of both and is the
+            thing an owner most needs to know before changing a price. */}
+        <p className="rounded-lg bg-cw-teal-soft/50 px-3 py-2 text-[11px] leading-snug text-cw-ink/70 sm:col-span-2">
+          {car.upcoming.length === 0
+            ? "Both rates apply to new bookings only. A reservation always keeps the price it was quoted."
+            : `Both rates apply to new bookings only. The ${car.upcoming.length} ${
+                car.upcoming.length === 1 ? "rental" : "rentals"
+              } already on the books keep the price they were quoted.`}
+        </p>
 
         {/* ── photo ────────────────────────────────────────────────────── */}
         <label className="block">
@@ -587,7 +644,8 @@ function CarEditor({ car }: { car: FleetCarDetail }) {
             variant="secondary"
             disabled={busy}
             onClick={() => {
-              setRate((car.dailyRateCents / 100).toString());
+              setRate(asField(car.dailyRateCents));
+              setMonthlyRate(asField(car.monthlyRateCents));
               setStatus(car.status);
               setPhotoUrl(car.photoUrl);
               setNotes(car.maintenanceNotes ?? "");

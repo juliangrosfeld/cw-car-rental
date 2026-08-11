@@ -31,12 +31,16 @@ export default function Footer() {
       <div className="mx-auto max-w-[1160px] px-5 py-14 md:px-8">
         <div className="grid gap-10 md:grid-cols-[1.4fr_1fr_1fr]">
           <div>
-            <img
-              src="/assets/cw-logo-320.png"
-              alt="CW Car Rental"
-              className="h-16 w-16 select-none"
-              draggable={false}
-            />
+            {/* Dark teal ink on navy would disappear, so the lockup rides the
+                same white plate the nav uses. */}
+            <span className="inline-flex rounded-2xl bg-white px-4 py-3">
+              <img
+                src="/assets/cw-logo-lockup-480.png"
+                alt="CW Car Rental"
+                className="h-14 w-auto select-none"
+                draggable={false}
+              />
+            </span>
             <p className="mt-5 max-w-[36ch] text-[15px] leading-relaxed text-white/80">
               {POSITIONING}
             </p>

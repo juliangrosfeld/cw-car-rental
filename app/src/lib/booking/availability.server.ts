@@ -6,9 +6,19 @@
  * WHY THIS RUNS WITH THE SERVICE ROLE
  * The anon role can no longer insert bookings or clients (see migration
  * 0002_server_side_bookings.sql). This module is the only write path, which is
- * what makes it possible to guarantee the price: `createBooking` reads
- * daily_rate from the database and recomputes the total, ignoring whatever the
+ * what makes it possible to guarantee the price: `createBooking` reads the
+ * rates from the database and recomputes the total, ignoring whatever the
  * browser claimed it should be.
+ *
+ * That guarantee now covers three things, not one, because there are three ways
+ * a crafted request could otherwise pay less than the price list says:
+ *   · the RATE — read from the cars row, never accepted from the request;
+ *   · the LENGTH DISCOUNT — derived from dates the server resolved, so a client
+ *     cannot claim a 15% tier on a four-day rental;
+ *   · the RENTAL TYPE — a monthly booking's return date is derived here, so a
+ *     request cannot buy a 90-day stay at the one-month rate.
+ * All three live in quoteRental() in ./rental, which this module calls with
+ * database values only.
  *
  * WHY THE OVERLAP CHECK HERE IS NOT THE SAFETY NET
  * `findAvailableCars` is a READ, so it is check-then-act: two requests can both
@@ -23,9 +33,13 @@ import type { Booking, Car, Client } from "../supabase/types";
 import {
   PICKUP_TIME,
   RETURN_TIME,
-  quote,
+  quoteRental,
+  rentalDays,
+  resolveWindow,
   toTimestamp,
   type BusyRange,
+  type QuoteRefusal,
+  type RentalType,
 } from "./rental";
 
 /** Statuses that still occupy a car. Mirrors the exclusion constraint's
@@ -173,7 +187,12 @@ async function findOrCreateClient(input: {
   return data;
 }
 
-export interface CreateBookingInput extends RentalWindow {
+export interface CreateBookingInput {
+  rentalType: RentalType;
+  /** 'YYYY-MM-DD' */
+  pickupDate: string;
+  /** 'YYYY-MM-DD'. Ignored for a monthly rental, whose period is derived here. */
+  returnDate?: string | null;
   carId: string;
   fullName: string;
   email: string;
@@ -195,8 +214,15 @@ export interface BookingConfirmation {
   pickupLocation: string;
   returnLocation: string;
   flightNumber: string | null;
+  rentalType: RentalType;
   days: number;
-  perDayCents: number;
+  /** Cents. The daily rate for a daily rental, the monthly rate for a monthly
+   *  one — whichever the total was built from. */
+  rateCents: number;
+  /** Cents before the discount. Equals totalCents when none applied. */
+  subtotalCents: number;
+  discountPct: number;
+  discountCents: number;
   totalCents: number;
   bookingStatus: Booking["booking_status"];
   paymentStatus: Booking["payment_status"];
@@ -205,7 +231,11 @@ export interface BookingConfirmation {
 
 export type CreateBookingResult =
   | { ok: true; confirmation: BookingConfirmation }
-  | { ok: false; reason: "car_not_bookable" | "date_conflict"; message: string };
+  | {
+      ok: false;
+      reason: "car_not_bookable" | "date_conflict" | QuoteRefusal;
+      message: string;
+    };
 
 /** Postgres exclusion_violation — the double-booking guard firing. */
 const EXCLUSION_VIOLATION = "23P01";
@@ -222,7 +252,12 @@ const EXCLUSION_VIOLATION = "23P01";
 export async function createBooking(
   input: CreateBookingInput,
 ): Promise<CreateBookingResult> {
-  assertValidWindow(input);
+  // The window a monthly rental occupies is DERIVED, not accepted: the guest
+  // picks a start day and the period is fixed at MONTHLY_PERIOD_DAYS. Doing this
+  // before anything else means the dates that are validated, the dates that are
+  // priced and the dates that are written are the same three dates.
+  const window = resolveWindow(input.rentalType, input.pickupDate, input.returnDate);
+  assertValidWindow(window);
   const db = supabaseAdmin();
 
   // 1. Authoritative price source. Nothing the browser sent is trusted here.
@@ -241,11 +276,19 @@ export async function createBooking(
     };
   }
 
-  const { days, perDayCents, totalCents } = quote(
-    car.daily_rate,
-    input.pickupDate,
-    input.returnDate,
-  );
+  // THE price. Rates from the database, dates resolved above, tier derived from
+  // the day count — a refusal here (too short, too long to self-serve, no
+  // monthly rate on this car) is a thing to tell the guest, not a 500.
+  const priced = quoteRental({
+    rentalType: input.rentalType,
+    rates: { dailyRateCents: car.daily_rate, monthlyRateCents: car.monthly_rate },
+    pickupDate: window.pickupDate,
+    returnDate: window.returnDate,
+  });
+  if (!priced.ok) {
+    return { ok: false, reason: priced.reason, message: priced.message };
+  }
+  const quote = priced.quote;
 
   // 2. Guest record.
   const client = await findOrCreateClient({
@@ -261,14 +304,17 @@ export async function createBooking(
     .insert({
       client_id: client.id,
       car_id: car.id,
-      pickup_date: input.pickupDate,
+      pickup_date: window.pickupDate,
       pickup_time: PICKUP_TIME,
-      return_date: input.returnDate,
+      return_date: window.returnDate,
       return_time: RETURN_TIME,
       pickup_location: input.pickupLocation,
       return_location: input.returnLocation,
       flight_number: input.flightNumber?.trim() || null,
-      total_price: totalCents,
+      total_price: quote.totalCents,
+      rental_type: quote.rentalType,
+      discount_pct: quote.discountPct,
+      discount_cents: quote.discountCents,
       special_requests: input.specialRequests?.trim() || null,
     })
     .select()
@@ -308,8 +354,12 @@ export async function createBooking(
       pickupLocation: booking.pickup_location,
       returnLocation: booking.return_location,
       flightNumber: booking.flight_number,
-      days,
-      perDayCents,
+      rentalType: booking.rental_type,
+      days: quote.days,
+      rateCents: quote.rateCents,
+      subtotalCents: quote.subtotalCents,
+      discountPct: booking.discount_pct,
+      discountCents: booking.discount_cents,
       totalCents: booking.total_price,
       bookingStatus: booking.booking_status,
       paymentStatus: booking.payment_status,
@@ -340,7 +390,15 @@ export async function getBookingConfirmation(
 
   const car = data.cars as unknown as Car;
   const client = data.clients as unknown as Pick<Client, "full_name" | "email" | "phone">;
-  const days = quote(car.daily_rate, data.pickup_date, data.return_date).days;
+
+  // Rebuilt from what was STORED, never re-quoted. The rates in `cars` may have
+  // moved since; a guest reloading their confirmation must see the price they
+  // were given, and the arithmetic must still add up, so the subtotal is
+  // reconstructed from the total and the discount rather than from a rate.
+  const days = rentalDays(data.pickup_date, data.return_date);
+  const subtotalCents = data.total_price + data.discount_cents;
+  const rateCents =
+    data.rental_type === "monthly" ? data.total_price : Math.round(subtotalCents / days);
 
   return {
     bookingId: data.id,
@@ -360,8 +418,12 @@ export async function getBookingConfirmation(
     pickupLocation: data.pickup_location,
     returnLocation: data.return_location,
     flightNumber: data.flight_number,
+    rentalType: data.rental_type,
     days,
-    perDayCents: car.daily_rate,
+    rateCents,
+    subtotalCents,
+    discountPct: data.discount_pct,
+    discountCents: data.discount_cents,
     totalCents: data.total_price,
     bookingStatus: data.booking_status,
     paymentStatus: data.payment_status,

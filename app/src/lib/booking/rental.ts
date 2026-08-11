@@ -11,8 +11,10 @@
  * rental. This is the same rule the `bookings_no_double_booking` exclusion
  * constraint enforces in Postgres; keep the two in step.
  *
- * MONEY — cents everywhere, matching the database. Only formatUsd() converts.
+ * MONEY — cents everywhere, matching the database. Only src/lib/money.ts
+ * converts, and it prints XCG (the Caribbean guilder), which is what CW quotes.
  */
+export { formatMoney } from "../money";
 
 /** Wall-clock handover times. The wizard collects dates only; these fill in the
  *  time-of-day the schema requires. Both 10:00, which is what makes a same-day
@@ -42,13 +44,6 @@ export function fromKey(key: string): Date {
 export const fmtDay = (d: Date) =>
   d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 
-/** Cents → "$55" / "$52.50". Whole dollars stay clean, which is the common case. */
-export function formatUsd(cents: number): string {
-  return cents % 100 === 0
-    ? `$${cents / 100}`
-    : `$${(cents / 100).toFixed(2)}`;
-}
-
 /**
  * Billable days between two 'YYYY-MM-DD' keys. Minimum 1: a same-day rental
  * still costs a day.
@@ -64,19 +59,229 @@ export function rentalDays(pickupDate: string, returnDate: string): number {
   return Math.max(1, Math.round((b - a) / DAY_MS));
 }
 
+/** 'YYYY-MM-DD' + n days, in UTC arithmetic for the same DST reason as above. */
+export function addDaysToKey(dateKey: string, days: number): string {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  const shifted = new Date(Date.UTC(y, m - 1, d + days));
+  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}-${String(
+    shifted.getUTCDate(),
+  ).padStart(2, "0")}`;
+}
+
+/* ------------------------------------------------------------------ */
+/* THE PRICE BOOK                                                      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * How a rental is priced. Two products, not two views of one:
+ *
+ *   daily    a date range. Billed per day at the car's daily_rate, with the
+ *            length discounts below applied automatically.
+ *   monthly  a flat monthly_rate for a ~30-day period. No day count, no tier —
+ *            the monthly rate IS the long-stay price, and stacking a length
+ *            discount on top of it would discount it twice.
+ */
+export const RENTAL_TYPES = ["daily", "monthly"] as const;
+export type RentalType = (typeof RENTAL_TYPES)[number];
+
+export function isRentalType(value: unknown): value is RentalType {
+  return typeof value === "string" && (RENTAL_TYPES as readonly string[]).includes(value);
+}
+
+/** Nobody collects a car for two days. Enforced in the calendar, in the server
+ *  function, and stated on screen — not just refused. */
+export const MIN_RENTAL_DAYS = 3;
+
+/**
+ * The longest daily rental this site will price by itself.
+ *
+ * 28 days and over is a month-plus stay, which is a conversation (insurance,
+ * servicing mid-rental, a rate that is not on the price list) rather than a
+ * checkout. The flow sends those to us instead of inventing a number — see
+ * `custom_quote` below. It is deliberately NOT silently converted into a
+ * monthly booking: a guest asking for 35 days has not asked for 30.
+ */
+export const MAX_SELF_SERVICE_DAYS = 27;
+
+/** What "a month" means when a monthly rental is booked. Roughly a month, said
+ *  plainly, rather than a calendar month that would make February cheaper. */
+export const MONTHLY_PERIOD_DAYS = 30;
+
+export interface DiscountTier {
+  /** Inclusive lower bound in billable days. */
+  minDays: number;
+  pct: number;
+  /** How the tier is described to a guest on a price breakdown. */
+  label: string;
+  /** The same tier inside a sentence: "5% off a week". Spelled out, because the
+   *  public site's copy is written, not tabulated. */
+  shortLabel: string;
+}
+
+/**
+ * Automatic length discounts off the daily-rate total. Ordered longest first so
+ * the first match is the best one the guest qualifies for.
+ *
+ * These are applied SERVER-SIDE from the day count the server derived, exactly
+ * like the rate itself. Nothing the browser sends influences the tier.
+ */
+export const DISCOUNT_TIERS: readonly DiscountTier[] = [
+  { minDays: 21, pct: 15, label: "Three weeks or more", shortLabel: "three weeks" },
+  { minDays: 14, pct: 10, label: "Two weeks or more", shortLabel: "two weeks" },
+  { minDays: 7, pct: 5, label: "A week or more", shortLabel: "a week" },
+];
+
+/** The tier a length earns, or 0. */
+export function discountPctForDays(days: number): number {
+  return DISCOUNT_TIERS.find((tier) => days >= tier.minDays)?.pct ?? 0;
+}
+
+/** The tier a length earns, in full, or null. */
+export function discountTierForDays(days: number): DiscountTier | null {
+  return DISCOUNT_TIERS.find((tier) => days >= tier.minDays) ?? null;
+}
+
+/** "5% off a week, 10% off two weeks, 15% off three weeks" — the one-liner the
+ *  fleet and booking pages both show, built from the tiers rather than typed
+ *  out twice and left to drift out of step with what the server charges. */
+export const DISCOUNT_TIER_SUMMARY = [...DISCOUNT_TIERS]
+  .reverse()
+  .map((tier) => `${tier.pct}% off ${tier.shortLabel}`)
+  .join(", ");
+
+/** The return date a monthly rental runs to, given its pickup day. */
+export function monthlyReturnDate(pickupDate: string): string {
+  return addDaysToKey(pickupDate, MONTHLY_PERIOD_DAYS);
+}
+
+/**
+ * The dates a booking actually occupies.
+ *
+ * For a monthly rental the return date is DERIVED, never accepted: the guest
+ * picks a start day and the period is fixed. The server calls this before it
+ * checks availability and before it prices, so the window it books is the
+ * window it quoted.
+ */
+export function resolveWindow(
+  rentalType: RentalType,
+  pickupDate: string,
+  returnDate?: string | null,
+): { pickupDate: string; returnDate: string } {
+  return {
+    pickupDate,
+    returnDate: rentalType === "monthly" ? monthlyReturnDate(pickupDate) : (returnDate ?? ""),
+  };
+}
+
 export interface Quote {
+  rentalType: RentalType;
+  /** Billable days. For a monthly rental this is the period length, not a
+   *  billing unit — the total does not depend on it. */
   days: number;
-  /** Cents. */
-  perDayCents: number;
-  /** Cents. */
+  /** Cents. The daily rate for a daily rental, the monthly rate for a monthly
+   *  one. What the total was built from, whichever product this is. */
+  rateCents: number;
+  /** Cents, before any discount. Equals totalCents when nothing applied. */
+  subtotalCents: number;
+  /** 0 when no tier applied. */
+  discountPct: number;
+  /** Cents taken off. Stored on the booking so the saving is a fact, not a
+   *  number re-derived later from a rate that may since have changed. */
+  discountCents: number;
+  /** Cents. What the guest is charged. */
   totalCents: number;
 }
 
-/** THE pricing rule. The server calls this with the daily_rate it read from the
- *  database, never with a number that came from the browser. */
-export function quote(dailyRateCents: number, pickupDate: string, returnDate: string): Quote {
-  const days = rentalDays(pickupDate, returnDate);
-  return { days, perDayCents: dailyRateCents, totalCents: dailyRateCents * days };
+/** Why a rental could not be self-service priced. Each one has its own thing to
+ *  say to the guest, so they are distinct rather than one "invalid". */
+export type QuoteRefusal = "below_minimum" | "custom_quote" | "monthly_unavailable";
+
+export type QuoteResult =
+  | { ok: true; quote: Quote }
+  | { ok: false; reason: QuoteRefusal; message: string; days: number };
+
+export interface RateCard {
+  /** Cents per rental day. */
+  dailyRateCents: number;
+  /** Cents for a ~30-day period. 0 means this car is not offered monthly. */
+  monthlyRateCents: number;
+}
+
+export const MIN_RENTAL_MESSAGE = `Our minimum rental is ${MIN_RENTAL_DAYS} days.`;
+
+/** Guest-facing, so it follows the brand copy rule: no em or en dashes. */
+export const CUSTOM_QUOTE_MESSAGE =
+  `${MAX_SELF_SERVICE_DAYS + 1} days or more is beyond our standard rates. ` +
+  "Message us and we will put together a custom quote.";
+
+/**
+ * THE pricing rule, for both products.
+ *
+ * The server calls this with rates it read from the database and dates it
+ * derived itself, never with a number that came from the browser. The wizard
+ * calls it too, with the same inputs, so what a guest is shown and what the
+ * server charges come from one implementation — but the server's answer is the
+ * one that is stored.
+ *
+ * Returns a result rather than throwing: "3-day minimum" and "talk to us about
+ * a month" are things to SAY to a guest mid-flow, not exceptions.
+ */
+export function quoteRental(input: {
+  rentalType: RentalType;
+  rates: RateCard;
+  pickupDate: string;
+  returnDate: string;
+}): QuoteResult {
+  const days = rentalDays(input.pickupDate, input.returnDate);
+
+  if (input.rentalType === "monthly") {
+    if (input.rates.monthlyRateCents <= 0) {
+      return {
+        ok: false,
+        reason: "monthly_unavailable",
+        message: "This car is not offered on a monthly rate. Pick another, or message us.",
+        days,
+      };
+    }
+    return {
+      ok: true,
+      quote: {
+        rentalType: "monthly",
+        days,
+        rateCents: input.rates.monthlyRateCents,
+        subtotalCents: input.rates.monthlyRateCents,
+        discountPct: 0,
+        discountCents: 0,
+        totalCents: input.rates.monthlyRateCents,
+      },
+    };
+  }
+
+  if (days < MIN_RENTAL_DAYS) {
+    return { ok: false, reason: "below_minimum", message: MIN_RENTAL_MESSAGE, days };
+  }
+  if (days > MAX_SELF_SERVICE_DAYS) {
+    return { ok: false, reason: "custom_quote", message: CUSTOM_QUOTE_MESSAGE, days };
+  }
+
+  const subtotalCents = input.rates.dailyRateCents * days;
+  const discountPct = discountPctForDays(days);
+  // Rounded once, off the subtotal, so the parts always add up to the total —
+  // a per-day rounding would leave a stray cent on long rentals.
+  const discountCents = Math.round((subtotalCents * discountPct) / 100);
+
+  return {
+    ok: true,
+    quote: {
+      rentalType: "daily",
+      days,
+      rateCents: input.rates.dailyRateCents,
+      subtotalCents,
+      discountPct,
+      discountCents,
+      totalCents: subtotalCents - discountCents,
+    },
+  };
 }
 
 /** A date range a car is already spoken for. Dates are 'YYYY-MM-DD'. */

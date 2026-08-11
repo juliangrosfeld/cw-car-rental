@@ -116,17 +116,16 @@ function LoginPage() {
     <main className="flex min-h-dvh items-center justify-center bg-cw-navy px-5 py-12">
       <div className="w-full max-w-[400px]">
         <div className="mb-6 flex items-center gap-3">
-          <img
-            src="/assets/cw-logo-320.png"
-            alt=""
-            className="h-11 w-11 select-none"
-            draggable={false}
-          />
-          <span className="font-display leading-tight text-white">
-            <span className="block text-[15px] font-extrabold tracking-tight">CW</span>
-            <span className="block text-[11px] font-semibold uppercase tracking-[0.16em] text-white/55">
-              Back office
-            </span>
+          <span className="inline-flex rounded-xl bg-white px-3 py-2">
+            <img
+              src="/assets/cw-logo-lockup-480.png"
+              alt=""
+              className="h-9 w-auto select-none"
+              draggable={false}
+            />
+          </span>
+          <span className="font-display text-[11px] font-semibold uppercase leading-tight tracking-[0.16em] text-white/55">
+            Back office
           </span>
         </div>
 

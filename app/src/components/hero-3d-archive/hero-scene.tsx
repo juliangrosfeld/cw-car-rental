@@ -16,8 +16,8 @@ interface HeroSceneProps {
  * lights, fog and ground, so nothing floats and nothing is composited.
  *
  * The mood is deliberately spare — a beautifully lit gradient sky and haze do
- * the work, with the car as the only real subject and a single wind-bent
- * divi-divi tree for a whisper of Curaçao. No island, no palm grove.
+ * the work, with the car as the only real subject. Pure atmosphere: no tree,
+ * no island, no palm grove.
  *
  * Camera journey (proven choreography): starts tight on the front-right
  * headlight, pulls back to reveal the car, sweeps around the far side, settles
@@ -204,12 +204,11 @@ export default function HeroScene({ progress, mode }: HeroSceneProps) {
       <spotLight ref={rimLight} position={[-2, 6, -8]} intensity={1.4} color="#ffb877" angle={0.6} penumbra={1} />
       <ambientLight ref={ambient} intensity={0.28} color="#ffe7cc" />
 
-      {/* The atmosphere: gradient sky, a calm ground, one divi-divi. */}
+      {/* The atmosphere: gradient sky and a calm ground. Nothing else. */}
       <mesh material={skyMaterial}>
         <sphereGeometry args={[72, 24, 16]} />
       </mesh>
       <Ground />
-      <DiviDivi position={[18, 0, -8]} rotationY={1.5} scale={1.4} />
 
       <group ref={carGroup}>
         <Suspense fallback={null}>
@@ -253,94 +252,6 @@ function Ground() {
       <circleGeometry args={[75, 48]} />
       <meshStandardMaterial map={texture} roughness={0.92} metalness={0} />
     </mesh>
-  )
-}
-
-/* ------------------------------------------------------------------ */
-/* The one signature element: a wind-bent divi-divi tree silhouette      */
-/* ------------------------------------------------------------------ */
-
-/**
- * Curaçao's iconic divi-divi — permanently combed to the leeward side by the
- * trade winds. Built as a dark, near-silhouette so the warm key light rims its
- * windward edge and canopy. Placed well back and to the side: character, never
- * competition for the car.
- *
- * Local space: the trunk rises from the origin and bends toward -x, the canopy
- * and bare branches all sweeping the same way, as a real divi-divi does.
- */
-function DiviDivi({
-  position,
-  rotationY = 0,
-  scale = 1,
-}: {
-  position: [number, number, number]
-  rotationY?: number
-  scale?: number
-}) {
-  const material = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: '#06222e', roughness: 0.5, metalness: 0 }),
-    [],
-  )
-
-  const trunk = useMemo(() => {
-    // Short and low-slung, canting to leeward (-x) — a divi-divi is wider than
-    // it is tall, its whole form pressed sideways by the trade wind.
-    const curve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(0, 0, 0),
-      new THREE.Vector3(-0.04, 0.55, 0),
-      new THREE.Vector3(-0.25, 1.05, 0.02),
-      new THREE.Vector3(-0.68, 1.45, 0),
-      new THREE.Vector3(-1.2, 1.62, 0.02),
-      new THREE.Vector3(-1.6, 1.66, 0),
-    ])
-    return new THREE.TubeGeometry(curve, 26, 0.1, 7, false)
-  }, [])
-
-  const branches = useMemo(() => {
-    const mk = (pts: [number, number, number][], r: number) =>
-      new THREE.TubeGeometry(
-        new THREE.CatmullRomCurve3(pts.map((p) => new THREE.Vector3(...p))),
-        14,
-        r,
-        5,
-        false,
-      )
-    // Bare limbs fanning leeward, under and through the flat canopy.
-    return [
-      mk([[-1.0, 1.55, 0], [-2.0, 1.76, 0.26], [-2.95, 1.82, 0.36]], 0.035),
-      mk([[-1.1, 1.5, 0], [-2.25, 1.56, -0.16], [-3.2, 1.52, -0.32]], 0.032),
-      mk([[-1.15, 1.44, 0], [-2.1, 1.4, 0.1], [-2.95, 1.28, 0.18]], 0.03),
-    ]
-  }, [])
-
-  // The signature windswept flag: a broad, flat canopy spread entirely to the
-  // leeward side and flattened in Y, so it reads as foliage from above and in
-  // silhouette against the sky rather than as a thin edge.
-  const canopy = useMemo(
-    () =>
-      [
-        { p: [-1.75, 1.62, 0], s: [1.65, 0.5, 1.15] },
-        { p: [-2.6, 1.68, 0.1], s: [1.42, 0.44, 0.98] },
-        { p: [-3.35, 1.6, -0.06], s: [1.05, 0.36, 0.74] },
-        { p: [-2.2, 1.76, 0.06], s: [1.22, 0.42, 0.92] },
-        { p: [-3.05, 1.5, 0.22], s: [0.92, 0.32, 0.64] },
-      ] as const,
-    [],
-  )
-
-  return (
-    <group position={position} rotation={[0, rotationY, 0]} scale={scale}>
-      <mesh geometry={trunk} material={material} />
-      {branches.map((g, i) => (
-        <mesh key={i} geometry={g} material={material} />
-      ))}
-      {canopy.map((c, i) => (
-        <mesh key={i} position={c.p as unknown as [number, number, number]} scale={c.s as unknown as [number, number, number]} material={material}>
-          <sphereGeometry args={[0.5, 10, 8]} />
-        </mesh>
-      ))}
-    </group>
   )
 }
 

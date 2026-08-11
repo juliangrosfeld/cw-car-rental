@@ -23,6 +23,7 @@
  * quote that was struck when it was taken; the ledger records what was paid
  * against it, and the two are compared, never reconciled by editing the price.
  */
+import { formatMoney, formatMoneyExact } from "../money";
 import { supabaseAdmin } from "../supabase/admin.server";
 import type { BookingStatus, PaymentStatus } from "../supabase/types";
 import { addDays, curacaoNow } from "./clock";
@@ -319,7 +320,9 @@ export async function getPaymentsOverview(filter: PaymentsFilter): Promise<Payme
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Nobody hands over more than this in cash at a rental counter; a bigger number
- *  is a decimal point in the wrong place. The form takes dollars and converts. */
+ *  is a decimal point in the wrong place. The form takes guilders and converts.
+ *
+ *  Comfortably clear of the largest real entry, a monthly rental at XCG 2,600. */
 const MAX_ENTRY_CENTS = 20_000_00;
 
 /**
@@ -347,7 +350,7 @@ export async function recordPayment(input: {
     return {
       ok: false,
       reason: "invalid",
-      message: `That is over $${MAX_ENTRY_CENTS / 100}. Check the amount.`,
+      message: `That is over ${formatMoney(MAX_ENTRY_CENTS)}. Check the amount.`,
     };
   }
 
@@ -381,7 +384,7 @@ export async function recordPayment(input: {
         message:
           totals.netCents <= 0
             ? "Nothing has been collected on this booking, so there is nothing to refund."
-            : `That is more than the $${(totals.netCents / 100).toFixed(2)} collected on this booking.`,
+            : `That is more than the ${formatMoneyExact(totals.netCents)} collected on this booking.`,
       };
     }
   }

@@ -12,7 +12,13 @@
  * already run requireAdmin().
  */
 
-import type { BookingStatus, CarStatus, PaymentStatus, PrepStatus } from "../supabase/types";
+import type {
+  BookingStatus,
+  CarStatus,
+  PaymentStatus,
+  PrepStatus,
+  RentalTypeValue,
+} from "../supabase/types";
 import type { LicenceLevel } from "./clients";
 
 /**
@@ -181,9 +187,10 @@ export interface BookingDetail {
     transmission: string;
     seats: number;
     status: CarStatus;
-    /** The car's rate TODAY, which is not necessarily what this rental was
+    /** The car's rates TODAY, which are not necessarily what this rental was
      *  quoted at — see `quotedPerDayCents`. */
     dailyRateCents: number;
+    monthlyRateCents: number;
   };
   pickupDate: string;
   pickupTime: string;
@@ -193,8 +200,27 @@ export interface BookingDetail {
   returnLocation: string;
   flightNumber: string | null;
   days: number;
-  /** total / days, i.e. what this booking was actually charged per day. Compare
-   *  with car.dailyRateCents to spot a rate change since it was taken. */
+  /**
+   * Which product was sold. Not derivable from the dates — a 30-day daily
+   * rental and a monthly rental look identical on a calendar — so it is read
+   * from the booking, where it was recorded at the time.
+   */
+  rentalType: RentalTypeValue;
+  /** The length-discount tier that applied, as struck. 0 for none, and always 0
+   *  for a monthly rental (the monthly rate IS the long-stay price). */
+  discountPct: number;
+  /** Cents taken off. `totalCents` is already net of it. */
+  discountCents: number;
+  /** What the rental came to before the discount, i.e. total + discount. */
+  subtotalCents: number;
+  /**
+   * What this booking was actually charged per day, BEFORE the discount:
+   * subtotal / days for a daily rental. Compare with car.dailyRateCents to spot
+   * a rate change since it was taken.
+   *
+   * Meaningless for a monthly rental, where there is no per-day price at all —
+   * the detail view shows the monthly rate instead rather than inventing one.
+   */
   quotedPerDayCents: number;
   totalCents: number;
   bookingStatus: BookingStatus;
@@ -326,7 +352,7 @@ export type PaymentWriteResult =
  * TAKEN and money PROMISED answer different questions and must not be added
  * together behind one word. `paidCents` is what has actually been collected
  * from this person; `outstandingCents` is what they are booked for and have not
- * paid yet. A guest with $1,200 outstanding and nothing paid is not a $1,200
+ * paid yet. A guest with XCG 1,200 outstanding and nothing paid is not an XCG 1,200
  * customer, and the UI never implies they are.
  *
  * Cancelled bookings contribute to neither, and are counted separately so the
@@ -484,6 +510,8 @@ export interface FleetCarRow {
   category: string;
   photoUrl: string;
   dailyRateCents: number;
+  /** Flat price of a ~30-day rental. 0 means this car is not offered monthly. */
+  monthlyRateCents: number;
   status: CarStatus;
   /** INTERNAL — never goes near a public payload. */
   maintenanceNotes: string | null;
@@ -542,6 +570,8 @@ export interface FleetCarDetail {
   seats: number;
   photoUrl: string;
   dailyRateCents: number;
+  /** Flat price of a ~30-day rental. 0 means this car is not offered monthly. */
+  monthlyRateCents: number;
   status: CarStatus;
   maintenanceNotes: string | null;
   offRoadSince: string | null;

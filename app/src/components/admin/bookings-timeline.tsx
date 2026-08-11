@@ -83,9 +83,13 @@ function Bar({ bar }: { bar: TimelineBar }) {
       {bar.clippedStart && <span className="mr-1 shrink-0 opacity-60">‹</span>}
       <span className={`truncate ${cancelled ? "line-through" : ""}`}>{bar.clientName}</span>
       {/* Payment is the one thing worth flagging on the calendar itself: an
-          unpaid car about to go out is the expensive mistake. */}
+          unpaid car about to go out is the expensive mistake.
+
+          The guilder sign rather than the "XCG" token used for actual figures:
+          this is a one-glyph marker in a bar that may be three characters wide,
+          and it is labelled in the legend below. Keep the two in step. */}
       {!cancelled && bar.paymentStatus !== "paid" && bar.span > 2 && (
-        <span className="ml-auto shrink-0 pl-1 font-bold opacity-70">$</span>
+        <span className="ml-auto shrink-0 pl-1 font-bold opacity-70">ƒ</span>
       )}
       {bar.clippedEnd && <span className="ml-auto shrink-0 pl-1 opacity-60">›</span>}
     </Link>
@@ -245,7 +249,7 @@ export function TimelineLegend() {
         Cancelled
       </span>
       <span className="flex items-center gap-1.5">
-        <span className="font-bold text-cw-ink/70">$</span> Not yet paid
+        <span className="font-bold text-cw-ink/70">ƒ</span> Not yet paid
       </span>
       {/* Stated explicitly because it looks like an off-by-one until you know
           the rule: the return day is the next rental's pickup day. */}

@@ -4,7 +4,10 @@
  * Two rules that everything here follows:
  *
  * MONEY is integer cents everywhere in the app and becomes a string exactly
- * once — here. Never divide by 100 inline in a component.
+ * once — in src/lib/money.ts, which the CRM and the public site share so a
+ * figure reads identically on both. Re-exported here because every CRM screen
+ * already imports its formatting from this module. Never divide by 100 inline
+ * in a component.
  *
  * DATES are 'YYYY-MM-DD' strings and must never be handed to `new Date(str)`:
  * that parses a bare date as UTC midnight and then renders it in the viewer's
@@ -14,32 +17,7 @@
  * the string that comes out is the string that went in.
  */
 
-const money = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 0,
-});
-
-const moneyPrecise = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
-
-/** Cents → "$1,240", or "$1,240.50" when the cents are not round. Whole dollars
- *  are the overwhelming case (rates are set in whole dollars), and dropping the
- *  ".00" makes a wall of figures much faster to scan. */
-export function formatMoney(cents: number): string {
-  return cents % 100 === 0 ? money.format(cents / 100) : moneyPrecise.format(cents / 100);
-}
-
-/** Always two decimals. For a single figure being reconciled against a receipt,
- *  where the trailing zeros are the point. */
-export function formatMoneyExact(cents: number): string {
-  return moneyPrecise.format(cents / 100);
-}
+export { CURRENCY_CODE, formatAmount, formatMoney, formatMoneyExact } from "../money";
 
 function fromKeyUtc(dateKey: string): Date {
   const [y, m, d] = dateKey.split("-").map(Number);

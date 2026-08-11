@@ -10,7 +10,7 @@
  * is authoritative, this file is just what the app codes against.
  *
  * CONVENTIONS (same as the migration)
- *   money   integer CENTS, never floats. 5500 == $55.00.
+ *   money   integer CENTS of XCG, never floats. 6000 == XCG 60.00.
  *   dates   'YYYY-MM-DD'; times 'HH:MM:SS' (Postgres `date` / `time`).
  *   ids     cars use the FLEET slugs from src/content/brand.ts; everything
  *           else is a uuid.
@@ -27,12 +27,17 @@ export const BOOKING_STATUS = [
 export const PAYMENT_STATUS = ["unpaid", "pending", "paid", "refunded"] as const;
 export const PREP_STATUS = ["booked", "needs_prep", "ready", "out", "returned"] as const;
 export const TRANSMISSION = ["Automatic", "Manual"] as const;
+/** Which product was sold — see bookings.rental_type in migration 0004. The
+ *  vocabulary itself lives in src/lib/booking/rental.ts, which is where the
+ *  pricing rules that give it meaning are. */
+export const RENTAL_TYPE = ["daily", "monthly"] as const;
 
 export type CarStatus = (typeof CAR_STATUS)[number];
 export type BookingStatus = (typeof BOOKING_STATUS)[number];
 export type PaymentStatus = (typeof PAYMENT_STATUS)[number];
 export type PrepStatus = (typeof PREP_STATUS)[number];
 export type Transmission = (typeof TRANSMISSION)[number];
+export type RentalTypeValue = (typeof RENTAL_TYPE)[number];
 
 /** Every status except `cancelled` still occupies the car — mirrors the
  *  partial WHERE clause on the bookings exclusion constraint. */
@@ -53,8 +58,12 @@ export interface Database {
           model: string;
           category: string;
           color: string;
-          /** Cents per rental day. */
+          /** Cents per rental day, undiscounted. Length discounts are applied
+           *  on top by the server — see DISCOUNT_TIERS in ../booking/rental. */
           daily_rate: number;
+          /** Cents for a ~30-day monthly rental. Flat, NOT 30 x daily_rate.
+           *  0 means this car is not offered monthly. */
+          monthly_rate: number;
           transmission: Transmission;
           seats: number;
           photo_url: string;
@@ -77,6 +86,7 @@ export interface Database {
           category: string;
           color: string;
           daily_rate: number;
+          monthly_rate?: number;
           transmission?: Transmission;
           seats: number;
           photo_url: string;
@@ -132,8 +142,15 @@ export interface Database {
           pickup_location: string;
           return_location: string;
           flight_number: string | null;
-          /** Cents, quoted at booking time. */
+          /** Cents, quoted at booking time and already NET of any discount. */
           total_price: number;
+          /** Which product was sold. A 30-day daily rental and a monthly rental
+           *  look identical on a calendar and cost very differently. */
+          rental_type: RentalTypeValue;
+          /** The length-discount tier that applied, 0 if none. As struck. */
+          discount_pct: number;
+          /** Cents taken off. Pre-discount total is total_price + this. */
+          discount_cents: number;
           booking_status: BookingStatus;
           payment_status: PaymentStatus;
           prep_status: PrepStatus;
@@ -157,6 +174,9 @@ export interface Database {
           return_location: string;
           flight_number?: string | null;
           total_price: number;
+          rental_type?: RentalTypeValue;
+          discount_pct?: number;
+          discount_cents?: number;
           booking_status?: BookingStatus;
           payment_status?: PaymentStatus;
           prep_status?: PrepStatus;

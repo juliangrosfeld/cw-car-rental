@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import Hero from "../components/hero/hero";
 import FleetSection from "../components/landing/fleet-section";
 import ValuesStack from "../components/landing/values-stack";
+import Testimonials from "../components/landing/testimonials";
 import FounderTeaser from "../components/landing/founder-teaser";
 
 export const Route = createFileRoute("/")({
@@ -16,6 +17,7 @@ function Index() {
       <Hero />
       <FleetSection />
       <ValuesStack />
+      <Testimonials />
       <FounderTeaser />
     </main>
   );

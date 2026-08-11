@@ -19,17 +19,29 @@ import {
   listBookableCars,
   InvalidRentalWindowError,
 } from "../booking/availability.server";
-import { CALENDAR_HORIZON_DAYS, DAY_MS, toKey } from "../booking/rental";
+import {
+  CALENDAR_HORIZON_DAYS,
+  DAY_MS,
+  RENTAL_TYPES,
+  resolveWindow,
+  toKey,
+} from "../booking/rental";
 import type { Car } from "../supabase/types";
 
 /** The car fields safe to serialise to the browser. `cars` is anon-readable in
- *  full, so this is shape discipline rather than a security boundary. */
+ *  full, so this is shape discipline rather than a security boundary.
+ *
+ *  Both rates go out: the fleet cards and the wizard quote per-day and
+ *  per-month side by side. Neither is trusted on the way back in — the server
+ *  re-reads them at booking time. */
 export interface PublicCar {
   id: string;
   model: string;
   category: string;
   color: string;
   dailyRateCents: number;
+  /** 0 when this car is not offered monthly. */
+  monthlyRateCents: number;
   transmission: string;
   seats: number;
   photoUrl: string;
@@ -42,6 +54,7 @@ function toPublicCar(c: Car): PublicCar {
     category: c.category,
     color: c.color,
     dailyRateCents: c.daily_rate,
+    monthlyRateCents: c.monthly_rate,
     transmission: c.transmission,
     seats: c.seats,
     photoUrl: c.photo_url,
@@ -52,9 +65,21 @@ const dateSchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, "Expected a YYYY-MM-DD date");
 
-const windowSchema = z
-  .object({ pickupDate: dateSchema, returnDate: dateSchema })
-  .refine((w) => w.returnDate > w.pickupDate, {
+/**
+ * A rental as the browser describes it: a type and a start, plus an end that
+ * only a daily rental supplies.
+ *
+ * The end of a MONTHLY rental is never accepted from the client — resolveWindow
+ * derives it, here and again inside createBooking. Accepting it would let a
+ * request buy any length of stay for one month's money.
+ */
+const requestSchema = z
+  .object({
+    rentalType: z.enum(RENTAL_TYPES),
+    pickupDate: dateSchema,
+    returnDate: dateSchema.optional().nullable(),
+  })
+  .refine((w) => w.rentalType === "monthly" || (w.returnDate && w.returnDate > w.pickupDate), {
     message: "Return date must be after the pickup date",
     path: ["returnDate"],
   });
@@ -89,20 +114,21 @@ export const getFleetAvailability = createServerFn({ method: "GET" }).handler(as
  * thirty seconds ago.
  */
 export const getAvailableCars = createServerFn({ method: "POST" })
-  .inputValidator(windowSchema)
+  .inputValidator(requestSchema)
   .handler(async ({ data }) => {
+    const window = resolveWindow(data.rentalType, data.pickupDate, data.returnDate);
     try {
-      const cars = await findAvailableCars(data);
-      return { ok: true as const, cars: cars.map(toPublicCar) };
+      const cars = await findAvailableCars(window);
+      return { ok: true as const, cars: cars.map(toPublicCar), window };
     } catch (error) {
       if (error instanceof InvalidRentalWindowError) {
-        return { ok: false as const, message: error.message, cars: [] };
+        return { ok: false as const, message: error.message, cars: [], window };
       }
       throw error;
     }
   });
 
-const submitSchema = windowSchema.and(
+const submitSchema = requestSchema.and(
   z.object({
     carId: z.string().min(1),
     fullName: z.string().trim().min(1, "We need a name for the reservation."),
@@ -117,11 +143,14 @@ const submitSchema = windowSchema.and(
 
 /**
  * Create a booking. NOTE what is absent from the input schema: there is no
- * price field. The total is computed server-side from the car's daily_rate, so
- * a crafted request cannot influence what the guest is charged.
+ * price field, no day count and no discount. All three are computed server-side
+ * from the car's rates and the dates the server resolved, so a crafted request
+ * cannot influence what the guest is charged — not by naming a price, not by
+ * claiming a discount tier, and not by stretching a monthly period.
  *
  * Returns a discriminated result rather than throwing on the expected failures
- * (car taken, car off the road) so the wizard can recover in place.
+ * (car taken, car off the road, rental too short, rental long enough to need a
+ * custom quote) so the wizard can recover in place.
  */
 export const submitBooking = createServerFn({ method: "POST" })
   .inputValidator(submitSchema)

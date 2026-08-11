@@ -156,7 +156,7 @@ function FleetPage() {
                   <tr>
                     <Th>Car</Th>
                     <Th>Standing</Th>
-                    <Th align="right">Rate / day</Th>
+                    <Th align="right">Rates</Th>
                     <Th align="right">Utilisation</Th>
                     <Th align="right">Collected</Th>
                     <Th align="right">Rentals</Th>
@@ -200,8 +200,26 @@ function FleetPage() {
                           )}
                         </div>
                       </Td>
-                      <Td align="right" className="font-semibold text-cw-navy">
-                        {formatMoney(car.dailyRateCents)}
+                      {/* Both products, one column: a car's price list is the
+                          daily rate and the monthly rate together, and reading
+                          them apart is how you miss that one has not been set. */}
+                      <Td align="right" className="whitespace-nowrap">
+                        <span className="font-semibold text-cw-navy">
+                          {formatMoney(car.dailyRateCents)}
+                        </span>
+                        <span className="text-[11px] text-cw-ink/45"> / day</span>
+                        <span className="block text-[11px]">
+                          {car.monthlyRateCents > 0 ? (
+                            <>
+                              <span className="font-semibold text-cw-ink/70">
+                                {formatMoney(car.monthlyRateCents)}
+                              </span>
+                              <span className="text-cw-ink/45"> / month</span>
+                            </>
+                          ) : (
+                            <span className="text-cw-ink/45">not offered monthly</span>
+                          )}
+                        </span>
                       </Td>
                       <Td align="right">
                         <span className="font-semibold text-cw-navy">

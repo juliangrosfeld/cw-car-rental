@@ -14,7 +14,7 @@
  * exactly what CW can honestly claim today.
  *
  * WHY A REFUND IS NOT A DELETED PAYMENT
- * Editing away a $300 charge and editing away a $300 refund produce the same
+ * Editing away an XCG 300 charge and editing away an XCG 300 refund produce the same
  * empty ledger and mean opposite things — one is a booking that never paid, the
  * other is a booking that paid and was made whole. Signed rows keep the
  * difference, which is what an accountant and a chargeback dispute both need.

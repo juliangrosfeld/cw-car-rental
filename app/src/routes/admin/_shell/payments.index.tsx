@@ -2,7 +2,7 @@
  * /admin/payments — what has been taken, what is owed, and the ledger behind it.
  *
  * THE DEFAULT VIEW IS WHAT IS OWED, not what has been collected. Money already
- * in the till does not need looking at; a car going out on Friday with $400
+ * in the till does not need looking at; a car going out on Friday with XCG 400
  * unpaid does.
  *
  * TWO MONEY BASES ON ONE SCREEN, LABELLED

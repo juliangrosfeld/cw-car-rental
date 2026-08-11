@@ -22,7 +22,7 @@ import {
   PROVIDER,
   type PaymentMethod,
 } from "../../lib/admin/payments";
-import { formatInstant, formatMoneyExact } from "../../lib/admin/format";
+import { CURRENCY_CODE, formatInstant, formatMoneyExact } from "../../lib/admin/format";
 import type { BookingLedger } from "../../lib/admin/types";
 import { Button, StatusPill } from "./ui";
 
@@ -89,9 +89,9 @@ export function RecordPayment({ ledger }: { ledger: BookingLedger }) {
 
     // Parsed here so a typo never becomes a ledger row. Cents are integers by
     // the time they cross the wire — see the money rule in ./format.
-    const dollars = Number(amount.trim());
-    if (amount.trim() === "" || !Number.isFinite(dollars) || dollars <= 0) {
-      setError("Enter an amount in dollars, e.g. 150 or 82.50.");
+    const guilders = Number(amount.trim());
+    if (amount.trim() === "" || !Number.isFinite(guilders) || guilders <= 0) {
+      setError(`Enter an amount in ${CURRENCY_CODE}, e.g. 150 or 82.50.`);
       return;
     }
 
@@ -102,7 +102,7 @@ export function RecordPayment({ ledger }: { ledger: BookingLedger }) {
       const result = await recordBookingPayment({
         data: {
           bookingId: ledger.bookingId,
-          amountCents: Math.round(dollars * 100),
+          amountCents: Math.round(guilders * 100),
           method,
           direction,
           pending: direction === "charge" ? pending : false,
@@ -172,7 +172,9 @@ export function RecordPayment({ ledger }: { ledger: BookingLedger }) {
             Amount
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="text-[14px] font-semibold text-cw-ink/60">$</span>
+            {/* Same prefix pattern as the fleet rate editor: the token sits
+                beside the field, so the value itself is just digits. */}
+            <span className="text-[13px] font-semibold text-cw-ink/60">{CURRENCY_CODE}</span>
             <input
               inputMode="decimal"
               value={amount}

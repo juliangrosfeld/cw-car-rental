@@ -20,12 +20,9 @@ export default function Nav() {
     let raf = 0
     const check = () => {
       raf = 0
-      // The landing hero is a 400vh pinned track: stay transparent for the
-      // whole camera journey, warm into the gradient as the hero releases.
-      const heroEnd = window.matchMedia('(max-width: 767px), (pointer: coarse)').matches
-        ? window.innerHeight * 0.7
-        : window.innerHeight * 2.85
-      setScrolled(window.scrollY > heroEnd)
+      // The landing hero is one viewport of looping video: stay transparent
+      // over the footage, warm into the gradient just before it scrolls away.
+      setScrolled(window.scrollY > window.innerHeight * 0.7)
     }
     const onScroll = () => {
       if (!raf) raf = requestAnimationFrame(check)
@@ -53,27 +50,19 @@ export default function Nav() {
       }`}
     >
       <nav className="mx-auto flex h-[72px] max-w-[1160px] items-center justify-between px-5 md:px-8">
-        <Link to="/" aria-label="CW Car Sales & Rental, home" className="flex items-center gap-3">
-          {/* The CW mark, used as-is: never stretched, recolored, or redrawn. */}
-          <img
-            src="/assets/cw-logo-320.png"
-            alt=""
-            className="h-11 w-11 shrink-0 select-none"
-            draggable={false}
-          />
-          <span
-            className={`hidden font-display leading-tight sm:block ${
-              solid ? 'text-cw-navy' : 'text-white'
-            }`}
-          >
-            <span className="block text-[15px] font-extrabold tracking-tight">CW</span>
-            <span
-              className={`block text-[11px] font-semibold uppercase tracking-[0.14em] ${
-                solid ? 'text-cw-navy/70' : 'text-white/80'
-              }`}
-            >
-              Car Sales &amp; Rental
-            </span>
+        <Link to="/" aria-label="CW Car Rental, home" className="flex items-center">
+          {/* The CW lockup, used as-is: never stretched, recolored, or redrawn.
+              Its ink is dark teal on transparent, which would sink into both
+              nav states (teal->mint gradient, dark hero footage), so it rides a
+              white plate rather than being knocked out to white. The plate is
+              the contrast, the mark stays the mark. */}
+          <span className="flex items-center rounded-xl bg-white px-2.5 py-1.5 shadow-[0_2px_12px_rgba(2,48,71,0.16)]">
+            <img
+              src="/assets/cw-logo-lockup-480.png"
+              alt=""
+              className="h-9 w-auto shrink-0 select-none"
+              draggable={false}
+            />
           </span>
         </Link>
 

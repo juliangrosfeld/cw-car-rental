@@ -29,18 +29,32 @@
  *   · a licence that expires before its own rental ends
  *   · a long rental crossing two month boundaries, and bookings in next month
  *     only, so the month navigation has somewhere to go
+ *   · a rental at the 3-day minimum, and one in EACH discount tier (7+, 14+,
+ *     21+), so a breakdown that forgets to subtract shows up as a wrong total
+ *   · a monthly rental, which occupies a car like any other booking but is
+ *     priced from a different column entirely
  *
  * The fleet rows themselves are NEVER touched: a car's status is real data an
  * owner may have set, and a fixture script has no business editing it.
  *
- * Prices are never invented: every total is quote(daily_rate, …) read from the
- * cars table, exactly as the booking flow computes it.
+ * PRICES ARE NEVER INVENTED: every total goes through quoteRental() with the
+ * rates read from the cars table, exactly as the booking flow computes it —
+ * discount tiers included. A fixture that the price book refuses is a mistake in
+ * this file and fails the run, which is the point: the fixture set cannot drift
+ * into prices the real flow could never produce. The one deliberate exception is
+ * `legacy`, below.
  */
 import process from "node:process";
 
 import { createClient } from "@supabase/supabase-js";
 
-import { quote } from "../src/lib/booking/rental";
+import {
+  MONTHLY_PERIOD_DAYS,
+  quoteRental,
+  rentalDays,
+  type RentalType,
+} from "../src/lib/booking/rental";
+import { formatMoney } from "../src/lib/money";
 import type { Database, PaymentStatus, PrepStatus, BookingStatus } from "../src/lib/supabase/types";
 
 /** Reserved TLD (RFC 2606). The tag that makes `clear` safe. */
@@ -104,8 +118,20 @@ interface Fixture {
     email?: string;
   };
   carId: string;
+  /** Defaults to 'daily'. A monthly fixture ignores `returnOffset` — the period
+   *  is derived, exactly as the booking flow derives it. */
+  rentalType?: RentalType;
   pickupOffset: number;
   returnOffset: number;
+  /**
+   * Price this one at the plain daily rate and skip the price book's checks.
+   *
+   * For rentals that could not be taken TODAY but legitimately exist in the
+   * history — the same-day hire below predates the 3-day minimum. The CRM has to
+   * render them correctly, so the fixture set has to contain one. Every other
+   * fixture goes through quoteRental() and a refusal fails the run.
+   */
+  legacy?: boolean;
   pickupTime?: string;
   returnTime?: string;
   pickupLocation: string;
@@ -334,13 +360,15 @@ const FIXTURES: Fixture[] = [
     adminNotes: "Returned clean and full. Wants a quote for two weeks in December.",
   },
   {
-    exercises: "Same-day rental, out at 08:00 and back at 19:30 — must still draw as one column",
+    exercises:
+      "Same-day rental, out at 08:00 and back at 19:30 — must still draw as one column. LEGACY: taken before the 3-day minimum existed, so the CRM must render a rental the booking flow would now refuse",
     guest: {
       name: "Jurgen Pieters",
       phone: "+599 9 511 7708",
       country: "Curaçao",
     },
     carId: "nissan-versa-red",
+    legacy: true,
     pickupOffset: -1,
     returnOffset: -1,
     pickupTime: "08:00:00",
@@ -353,7 +381,8 @@ const FIXTURES: Fixture[] = [
     specialRequests: "Day trip to Westpunt.",
   },
   {
-    exercises: "Four-week rental crossing two month boundaries — big total, payment still pending",
+    exercises:
+      "MONTHLY rental crossing two month boundaries — flat monthly rate, no per-day maths, no discount tier on top",
     guest: {
       name: "Isabel Fernández",
       phone: "+34 655 220 913",
@@ -362,18 +391,19 @@ const FIXTURES: Fixture[] = [
       country: "Spain",
     },
     carId: "nissan-versa-red",
+    rentalType: "monthly",
     pickupOffset: 12,
-    returnOffset: 40,
+    returnOffset: 12 + MONTHLY_PERIOD_DAYS,
     pickupLocation: AIRPORT,
     returnLocation: AIRPORT,
     flightNumber: "IB6501",
     bookingStatus: "confirmed",
     paymentStatus: "pending",
     prepStatus: "booked",
-    specialRequests: "Four weeks — is there a monthly rate?",
+    specialRequests: "Here for a work placement, taking the monthly rate.",
     ledger: "deposit",
     adminNotes:
-      "Bank transfer promised before pickup. Quoted at the standard daily rate; Clay to confirm a long-stay discount.",
+      "Bank transfer promised before pickup. On the flat monthly rate, not the daily one — do not requote per day if she extends.",
   },
   {
     exercises: "Next month only — absent from this month's calendar, present in the list",
@@ -574,6 +604,71 @@ const FIXTURES: Fixture[] = [
     prepStatus: "returned",
   },
   {
+    exercises:
+      "AT THE MINIMUM: exactly 3 days, the shortest rental the flow will take, and NO discount — the row that proves a tier is not applied to everything",
+    guest: {
+      name: "Naomi Leito",
+      phone: "+599 9 522 4417",
+      licenseNumber: "CW-441209",
+      licenseExpiryDays: 610,
+      country: "Curaçao",
+    },
+    carId: "chevrolet-spark-black",
+    pickupOffset: 7,
+    returnOffset: 10,
+    pickupLocation: PUNDA,
+    returnLocation: PUNDA,
+    bookingStatus: "confirmed",
+    paymentStatus: "paid",
+    prepStatus: "booked",
+    specialRequests: "Long weekend on the west side.",
+  },
+  {
+    exercises:
+      "TIER 2: 14 days, so 10% comes off. Total must be less than 14 x the daily rate everywhere it is shown",
+    guest: {
+      name: "Hannah Lindqvist",
+      phone: "+46 70 442 1180",
+      licenseNumber: "SE-7741203",
+      licenseExpiryDays: 720,
+      country: "Sweden",
+    },
+    carId: "hyundai-venue-red",
+    pickupOffset: 10,
+    returnOffset: 24,
+    pickupLocation: AIRPORT,
+    returnLocation: AIRPORT,
+    flightNumber: "SK1449",
+    bookingStatus: "confirmed",
+    paymentStatus: "paid",
+    prepStatus: "booked",
+    specialRequests: "Two weeks, mostly diving. Roof space for tanks would help.",
+    adminNotes: "Two week discount applied automatically at booking. Do not discount again by hand.",
+  },
+  {
+    exercises:
+      "TIER 3: 24 days, so 15% comes off — and it is still under the 27-day self-service ceiling, which the next one is not",
+    guest: {
+      name: "Victor Amaral",
+      phone: "+55 21 99884 3320",
+      licenseNumber: "BR-VA7741992",
+      licenseExpiryDays: 480,
+      country: "Brazil",
+    },
+    carId: "chevrolet-spark-black",
+    pickupOffset: 20,
+    returnOffset: 44,
+    pickupLocation: AIRPORT,
+    returnLocation: PUNDA,
+    flightNumber: "LA8074",
+    bookingStatus: "pending",
+    paymentStatus: "unpaid",
+    prepStatus: "booked",
+    ledger: "deposit",
+    adminNotes:
+      "Three week rate, taken online. Asked whether a fourth week is possible; that is over the online limit, so it needs a custom quote.",
+  },
+  {
     exercises: "Licence EXPIRING inside the warning window, with a rental booked ahead of it",
     guest: {
       name: "Peter Halvorsen",
@@ -609,7 +704,9 @@ function fixtureEmail(name: string): string {
 }
 
 async function loadCars() {
-  const { data, error } = await db.from("cars").select("id, model, color, daily_rate, status");
+  const { data, error } = await db
+    .from("cars")
+    .select("id, model, color, daily_rate, monthly_rate, status");
   if (error) fail(`Could not read the fleet: ${error.message}`);
   if (!data || data.length === 0) fail("No cars in the database — run the migrations first.");
   return new Map(data.map((c) => [c.id, c]));
@@ -685,12 +782,21 @@ async function seed() {
 
   /** reuseKey → the client row created for it. */
   const guestsByKey = new Map<string, string>();
-  const rows: { label: string; total: number; pickup: string; return: string }[] = [];
+  const rows: {
+    label: string;
+    type: string;
+    days: number;
+    discount: string;
+    total: number;
+    pickup: string;
+    return: string;
+  }[] = [];
 
   for (const fixture of FIXTURES) {
     const car = cars.get(fixture.carId);
     if (!car) fail(`Fixture references an unknown car: ${fixture.carId}`);
 
+    const rentalType = fixture.rentalType ?? "daily";
     const pickupDate = day(fixture.pickupOffset);
     const returnDate = day(fixture.returnOffset);
 
@@ -721,9 +827,38 @@ async function seed() {
       if (fixture.guest.reuseKey) guestsByKey.set(fixture.guest.reuseKey, clientId);
     }
 
-    // THE price rule, not a made-up number: daily_rate from the database times
-    // billable days, exactly what the public booking flow computes.
-    const { totalCents } = quote(car.daily_rate, pickupDate, returnDate);
+    // THE price rule, not a made-up number: the rates from the database through
+    // the same quoteRental() the public booking flow uses, tiers and all.
+    //
+    // A refusal is fatal by design. It means this file describes a rental CW
+    // does not sell (too short, past the self-service ceiling, monthly on a car
+    // with no monthly rate), and seeding it anyway would put a price in the
+    // database that no code path could ever produce.
+    let totalCents: number;
+    let discountPct = 0;
+    let discountCents = 0;
+
+    if (fixture.legacy) {
+      // Deliberately outside the price book — see `legacy` on the Fixture type.
+      totalCents = car.daily_rate * rentalDays(pickupDate, returnDate);
+    } else {
+      const priced = quoteRental({
+        rentalType,
+        rates: { dailyRateCents: car.daily_rate, monthlyRateCents: car.monthly_rate },
+        pickupDate,
+        returnDate,
+      });
+      if (!priced.ok) {
+        fail(
+          `Fixture for ${fixture.guest.name} cannot be priced (${priced.reason}): ${priced.message}` +
+            "\n    Fix the offsets in this script, or mark it `legacy` if it is meant to be a " +
+            "historical rental the flow would now refuse.",
+        );
+      }
+      totalCents = priced.quote.totalCents;
+      discountPct = priced.quote.discountPct;
+      discountCents = priced.quote.discountCents;
+    }
 
     const { data: booking, error: bookingError } = await db
       .from("bookings")
@@ -738,6 +873,9 @@ async function seed() {
         return_location: fixture.returnLocation,
         flight_number: fixture.flightNumber ?? null,
         total_price: totalCents,
+        rental_type: rentalType,
+        discount_pct: discountPct,
+        discount_cents: discountCents,
         booking_status: fixture.bookingStatus,
         payment_status: fixture.paymentStatus,
         prep_status: fixture.prepStatus,
@@ -837,6 +975,9 @@ async function seed() {
 
     rows.push({
       label: `${fixture.guest.name} · ${car.model} ${car.color} · ${fixture.prepStatus}`,
+      type: fixture.legacy ? "legacy" : rentalType,
+      days: rentalDays(pickupDate, returnDate),
+      discount: discountPct > 0 ? `${discountPct}% (${formatMoney(discountCents)})` : "—",
       total: totalCents,
       pickup: pickupDate,
       return: returnDate,
@@ -847,9 +988,12 @@ async function seed() {
   console.table(
     rows.map((r) => ({
       booking: r.label,
+      type: r.type,
       pickup: r.pickup,
       return: r.return,
-      total: `$${(r.total / 100).toFixed(2)}`,
+      days: r.days,
+      discount: r.discount,
+      total: formatMoney(r.total),
     })),
   );
   console.log("  What each row is here to prove:\n");

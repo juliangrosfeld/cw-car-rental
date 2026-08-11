@@ -168,17 +168,16 @@ export default function AdminShell({
       {/* Rail — lg and up */}
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-[212px] flex-col bg-cw-navy px-3 py-4 lg:flex">
         <Link to="/" className="mb-5 flex items-center gap-2.5 px-1">
-          <img
-            src="/assets/cw-logo-320.png"
-            alt=""
-            className="h-9 w-9 select-none"
-            draggable={false}
-          />
-          <span className="font-display leading-tight text-white">
-            <span className="block text-[14px] font-extrabold tracking-tight">CW</span>
-            <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-white/55">
-              Back office
-            </span>
+          <span className="inline-flex rounded-lg bg-white px-2 py-1.5">
+            <img
+              src="/assets/cw-logo-lockup-480.png"
+              alt=""
+              className="h-7 w-auto select-none"
+              draggable={false}
+            />
+          </span>
+          <span className="font-display text-[10px] font-semibold uppercase leading-tight tracking-[0.16em] text-white/55">
+            Back office
           </span>
         </Link>
 

@@ -17,10 +17,16 @@
  *               car keeps it and the handover still happens. That is exactly
  *               what an owner means by "take it off the road".
  *
- *   daily_rate  the rate for FUTURE quotes only. `bookings.total_price` was
- *               struck when the booking was taken and is never recomputed from
- *               this column — see the note on quotedPerDayCents in ./types. A
- *               rate rise cannot reprice a reservation a guest already holds.
+ *   daily_rate   the rate for FUTURE quotes only. `bookings.total_price` was
+ *   monthly_rate struck when the booking was taken and is never recomputed from
+ *               these columns — see the note on quotedPerDayCents in ./types. A
+ *               rate rise cannot reprice a reservation a guest already holds,
+ *               and neither can a change to the discount tiers.
+ *
+ *               The two are independent prices, not one derived from the other:
+ *               monthly_rate is the flat price of a ~30-day rental, and setting
+ *               it to 0 takes the car off the monthly product without touching
+ *               its daily availability.
  *
  *   photo_url   what the public fleet page and the booking wizard display.
  *
@@ -38,6 +44,7 @@
  */
 import { supabaseAdmin } from "../supabase/admin.server";
 import { rentalDays } from "../booking/rental";
+import { formatMoney } from "../money";
 import type { BookingStatus, CarStatus, PaymentStatus, PrepStatus } from "../supabase/types";
 import { addDays, curacaoNow, daysBetween, isMonthKey, monthKeyOf } from "./clock";
 import { DEFAULT_STATS_WINDOW, STATS_WINDOWS, type StatsWindow } from "./fleet";
@@ -60,8 +67,8 @@ const UPCOMING_LIMIT = 25;
 const CANCELLED = "cancelled";
 
 const CAR_SELECT = `
-  id, model, category, color, daily_rate, transmission, seats, photo_url,
-  status, maintenance_notes, off_road_since, created_at, updated_at
+  id, model, category, color, daily_rate, monthly_rate, transmission, seats,
+  photo_url, status, maintenance_notes, off_road_since, created_at, updated_at
 `;
 
 const RENTAL_SELECT = `
@@ -76,6 +83,7 @@ interface RawCar {
   category: string;
   color: string;
   daily_rate: number;
+  monthly_rate: number;
   transmission: string;
   seats: number;
   photo_url: string;
@@ -306,6 +314,7 @@ export async function getFleetOverview(windowDays?: number | null): Promise<Flee
       category: car.category,
       photoUrl: car.photo_url,
       dailyRateCents: car.daily_rate,
+      monthlyRateCents: car.monthly_rate,
       status: car.status,
       maintenanceNotes: car.maintenance_notes,
       offRoadSince: car.off_road_since,
@@ -439,6 +448,7 @@ export async function getFleetCar(
     seats: car.seats,
     photoUrl: car.photo_url,
     dailyRateCents: car.daily_rate,
+    monthlyRateCents: car.monthly_rate,
     status: car.status,
     maintenanceNotes: car.maintenance_notes,
     offRoadSince: car.off_road_since,
@@ -488,14 +498,19 @@ export async function getFleetCar(
 /* ── writes ────────────────────────────────────────────────────────────────── */
 
 /** A rate this far from the current one is almost certainly a units mistake —
- *  dollars typed into a cents field, or the other way round. The UI takes
- *  dollars and converts, so this is the last line of defence rather than the
- *  first. */
+ *  guilders typed into a cents field, or the other way round. The UI takes
+ *  guilders and converts, so this is the last line of defence rather than the
+ *  first. The monthly ceiling is deliberately not 30x the daily one: a monthly
+ *  rate is a long-stay price, and a monthly figure that high is the same typo. */
 const MAX_DAILY_RATE_CENTS = 500_00;
+const MAX_MONTHLY_RATE_CENTS = 10_000_00;
 
 export interface CarUpdate {
   carId: string;
   dailyRateCents: number;
+  /** 0 means this car is not offered monthly — a legitimate setting, not a
+   *  missing value, so it is allowed through rather than rejected. */
+  monthlyRateCents: number;
   status: CarStatus;
   photoUrl: string;
   maintenanceNotes: string;
@@ -539,7 +554,17 @@ export async function updateCar(input: CarUpdate): Promise<CarWriteResult> {
     return {
       ok: false,
       reason: "invalid",
-      message: `A daily rate over $${MAX_DAILY_RATE_CENTS / 100} looks like a mistake. Enter the rate in dollars.`,
+      message: `A daily rate over ${formatMoney(MAX_DAILY_RATE_CENTS)} looks like a mistake. Enter the rate in guilders.`,
+    };
+  }
+  if (!Number.isInteger(input.monthlyRateCents) || input.monthlyRateCents < 0) {
+    return { ok: false, reason: "invalid", message: "A monthly rate must be a whole amount." };
+  }
+  if (input.monthlyRateCents > MAX_MONTHLY_RATE_CENTS) {
+    return {
+      ok: false,
+      reason: "invalid",
+      message: `A monthly rate over ${formatMoney(MAX_MONTHLY_RATE_CENTS)} looks like a mistake. Enter the rate in guilders.`,
     };
   }
 
@@ -553,6 +578,7 @@ export async function updateCar(input: CarUpdate): Promise<CarWriteResult> {
     .from("cars")
     .update({
       daily_rate: input.dailyRateCents,
+      monthly_rate: input.monthlyRateCents,
       status: input.status,
       photo_url: input.photoUrl.trim(),
       maintenance_notes: notes.length > 0 ? notes : null,

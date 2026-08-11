@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { motion, useMotionValue, useSpring } from 'framer-motion'
 import { FLEET, type Vehicle } from '../../content/brand'
+import { CURRENCY_CODE } from '../../lib/money'
+import { DISCOUNT_TIER_SUMMARY, MIN_RENTAL_DAYS } from '../../lib/booking/rental'
 
 /**
  * The fleet, a single aligned grid: five identical cards on an even gutter.
@@ -62,6 +64,18 @@ export default function FleetSection() {
           <p className="mx-auto mt-5 max-w-[52ch] text-base leading-relaxed text-cw-ink/85 md:text-lg">
             You land, we meet you, you drive. Booking takes two minutes, and a real person answers
             every message.
+          </p>
+
+          {/* The discount ladder, said once, in the place a guest is choosing a
+              car. Built from DISCOUNT_TIERS, so it cannot drift from what the
+              server actually takes off at checkout. */}
+          <p className="mx-auto mt-6 inline-flex flex-wrap items-center justify-center gap-x-2 rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-cw-navy shadow-[0_2px_10px_rgba(2,48,71,0.06)]">
+            <span>Longer stays save more:</span>
+            <span className="font-normal text-cw-ink/80">{DISCOUNT_TIER_SUMMARY}.</span>
+          </p>
+          <p className="mt-3 text-sm text-cw-ink/65">
+            Prices in {CURRENCY_CODE}. Minimum rental {MIN_RENTAL_DAYS} days. Staying a month or
+            more? Ask us, we do monthly rates too.
           </p>
         </div>
 
@@ -135,12 +149,20 @@ function FleetCard({ vehicle, eager = false }: { vehicle: Vehicle; eager?: boole
         </p>
 
         <div className="mt-auto pt-5">
-          <div className="flex items-center justify-between gap-3">
+          {/* Two prices, one product each: the daily rate a week's holiday is
+              billed at, and the flat monthly rate that is NOT thirty of them. */}
+          <div className="flex items-end justify-between gap-3">
             <p className="text-cw-ink/85">
               <span className="font-display text-xl font-extrabold text-cw-navy">
-                ${vehicle.pricePerDay}
+                {CURRENCY_CODE} {vehicle.pricePerDay}
               </span>{' '}
               <span className="text-sm">per day</span>
+              <span className="mt-0.5 block text-sm text-cw-ink/70">
+                <span className="font-semibold text-cw-navy">
+                  {CURRENCY_CODE} {vehicle.pricePerMonth.toLocaleString('en-US')}
+                </span>{' '}
+                per month
+              </span>
             </p>
             <span className="shrink-0 rounded-full bg-cw-teal-soft px-3 py-1 text-xs font-semibold text-cw-teal-dark">
               {vehicle.transmission} · {vehicle.seats} seats

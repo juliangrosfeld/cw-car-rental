@@ -1,226 +1,154 @@
-import { Suspense, lazy, useEffect, useRef, useState } from 'react'
-import { motion, useReducedMotion, useScroll, useTransform, type MotionValue } from 'framer-motion'
+import { useEffect, useRef, useState } from 'react'
+import { motion, useReducedMotion } from 'framer-motion'
 import { POSITIONING } from '../../content/brand'
 import { BookCta } from '../site/nav'
-import { SETTLE_POSITION } from './hero-scene'
-
-// three.js + R3F live in a lazy chunk: copy and atmosphere paint first,
-// the 3D scene streams in behind them. Rendered only after mount (SSR-safe).
-const HeroCanvas = lazy(() => import('./hero-canvas'))
 
 /**
- * Hero — the Tier-1 mechanic (B3, 3D subject scene).
+ * Hero — full-bleed looping aerial of the Curaçao coast road.
  *
- * Desktop: a 400vh scroll track pins a full-viewport canvas while the camera
- * travels around the stylized Venue — close on a headlight, pull back,
- * orbit, settle wide. Copy stages trade places in sync.
+ * A static, continuously looping background video: no scroll hijacking, no
+ * WebGL. (The previous scroll-driven 3D hero lives in
+ * `src/components/hero-3d-archive/` — see the README there.)
  *
- * Mobile / touch: no scroll hijacking; the same scene on a slow turntable at
- * capped DPR. Reduced motion: settled camera, one static copy block.
- * No WebGL: the CSS atmosphere carries the hero alone.
+ * Loading is a two-step handoff so the section is never empty:
+ *   1. The poster frame paints on first render as a CSS background (170 KB).
+ *      It is the first frame of the video, so the swap is invisible.
+ *   2. The video source is chosen in an effect (viewport + connection) and
+ *      fades in once it can actually play.
+ *
+ * The video is deliberately skipped — poster only — for reduced-motion users,
+ * Save-Data, and 2g-class connections. Copy and CTAs never depend on it.
  */
 
-export default function Hero() {
-  const [client, setClient] = useState(false)
-  const [mobile, setMobile] = useState(false)
-  const [webgl, setWebgl] = useState(true)
-  const reducedMotion = useReducedMotion() ?? false
+const POSTER = '/assets/hero/curacao-coast-aerial-poster.jpg'
+const SRC_1080 = '/assets/hero/curacao-coast-aerial-1080.mp4'
+const SRC_720 = '/assets/hero/curacao-coast-aerial-720.mp4'
 
-  useEffect(() => {
-    setClient(true)
-    const mq = window.matchMedia('(max-width: 767px), (pointer: coarse)')
-    const sync = () => setMobile(mq.matches)
-    sync()
-    mq.addEventListener('change', sync)
-    try {
-      const canvas = document.createElement('canvas')
-      setWebgl(!!(canvas.getContext('webgl2') || canvas.getContext('webgl')))
-    } catch {
-      setWebgl(false)
+/** Which rendition to fetch, or `null` to stay on the poster entirely. */
+function pickSource(reducedMotion: boolean): string | null {
+  if (reducedMotion) return null
+
+  // Save-Data and slow radio links: the poster is the whole hero. Chromium-only
+  // API, so absence is treated as "no objection", not as "slow".
+  const conn = (
+    navigator as Navigator & {
+      connection?: { saveData?: boolean; effectiveType?: string }
     }
-    return () => mq.removeEventListener('change', sync)
-  }, [])
+  ).connection
+  if (conn?.saveData) return null
+  if (conn?.effectiveType === 'slow-2g' || conn?.effectiveType === '2g') return null
 
-  if (client && (mobile || !webgl)) {
-    return <MobileHero webgl={webgl} spin={!reducedMotion} />
-  }
-  return <ScrollHero showCanvas={client && webgl} staticCamera={reducedMotion} />
+  // Phones, tablets and any coarse-pointer device take the 720p cut (1.6 MB vs
+  // 3.4 MB). Portrait crops to the centre of the frame, where the road and the
+  // car already sit, so the smaller rendition loses nothing that shows.
+  const small = window.matchMedia('(max-width: 900px), (pointer: coarse)').matches
+  const lowMemory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory
+  if (small || (lowMemory !== undefined && lowMemory <= 4)) return SRC_720
+  return SRC_1080
 }
 
-/** The lit gradient sky painted in CSS: first paint and the no-WebGL floor.
- *  Teal zenith deepening into a warm peach/gold horizon — the same mood the
- *  WebGL sky renders, so the handoff from CSS to canvas is seamless. */
-function Atmosphere() {
+export default function Hero() {
+  const reducedMotion = useReducedMotion() ?? false
+  const [src, setSrc] = useState<string | null>(null)
+  const [playing, setPlaying] = useState(false)
+  const videoRef = useRef<HTMLVideoElement>(null)
+
+  useEffect(() => {
+    setSrc(pickSource(reducedMotion))
+  }, [reducedMotion])
+
+  // Autoplay can still be refused (low-power mode, aggressive policies). That
+  // is not an error state: the poster is already correct, so we just stay on it.
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video || !src) return
+    // React sets `muted` as a property and does not always reflect it to the
+    // attribute; iOS checks the element itself when deciding whether an inline
+    // autoplay is allowed, so assert it here before asking to play.
+    video.muted = true
+    const play = video.play()
+    if (play) play.catch(() => setPlaying(false))
+  }, [src])
+
   return (
-    <div aria-hidden="true" className="absolute inset-0 overflow-hidden">
+    <section className="relative isolate flex min-h-dvh flex-col justify-end overflow-hidden">
+      {/* 1. Poster frame — the hero has a real image from first paint, and
+             keeps one for good if the video is skipped or never arrives. */}
       <div
+        aria-hidden="true"
+        className="absolute inset-0 bg-cw-navy bg-cover bg-center"
+        style={{ backgroundImage: `url(${POSTER})` }}
+      />
+
+      {/* 2. The footage, fading over the poster once it is genuinely playing. */}
+      {src && (
+        <video
+          ref={videoRef}
+          src={src}
+          poster={POSTER}
+          autoPlay
+          muted
+          loop
+          playsInline
+          preload="auto"
+          aria-hidden="true"
+          tabIndex={-1}
+          disablePictureInPicture
+          onPlaying={() => setPlaying(true)}
+          className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-700 ease-out ${
+            playing ? 'opacity-100' : 'opacity-0'
+          }`}
+        />
+      )}
+
+      {/* 3. Scrim. The footage is bright — sunlit scrub and turquoise reef — so
+             legibility is bought here, not with text shadows alone:
+             a navy wash overall, a deep foot under the copy, and a top band so
+             the transparent nav's white marks hold over the water. */}
+      <div aria-hidden="true" className="absolute inset-0 bg-cw-navy/12" />
+      <div
+        aria-hidden="true"
         className="absolute inset-0"
         style={{
           background:
-            'linear-gradient(180deg, #0e6b72 0%, #2b8d93 24%, #79c4bf 50%, #f4d3a6 82%, #ffcf9c 100%)',
+            'linear-gradient(180deg, rgba(2,48,71,0.55) 0%, rgba(2,48,71,0.14) 20%, rgba(2,48,71,0) 38%, rgba(2,48,71,0.54) 72%, rgba(2,48,71,0.9) 100%)',
         }}
       />
-      {/* Warm horizon glow, low and to the right — light, not a sun disc. */}
+      {/* A gentle pull from the left anchors the copy column on wide screens.
+          Kept shallow on purpose: the reef in the left of frame is the best
+          thing in the shot, and a heavier wash turns it grey. */}
       <div
-        className="absolute -right-[6%] bottom-[6%] h-[52vw] w-[52vw] rounded-full"
+        aria-hidden="true"
+        className="absolute inset-0 hidden md:block"
         style={{
           background:
-            'radial-gradient(circle, rgba(255,214,158,0.75) 0%, rgba(255,201,143,0.26) 42%, rgba(255,201,143,0) 72%)',
+            'linear-gradient(90deg, rgba(2,48,71,0.5) 0%, rgba(2,48,71,0.14) 34%, rgba(2,48,71,0) 62%)',
         }}
       />
-    </div>
-  )
-}
 
-/* ------------------------------------------------------------------ */
-/* Desktop: pinned scroll-driven sequence                              */
-/* ------------------------------------------------------------------ */
-
-function ScrollHero({ showCanvas, staticCamera }: { showCanvas: boolean; staticCamera: boolean }) {
-  const trackRef = useRef<HTMLDivElement>(null)
-  const { scrollYProgress } = useScroll({
-    target: trackRef,
-    offset: ['start start', 'end end'],
-  })
-
-  // Copy stages, keyed to the camera journey.
-  const s1Opacity = useTransform(scrollYProgress, [0, 0.18, 0.28], [1, 1, 0])
-  const s1Y = useTransform(scrollYProgress, [0, 0.28], [0, -40])
-  const s2Opacity = useTransform(scrollYProgress, [0.34, 0.44, 0.56, 0.66], [0, 1, 1, 0])
-  const s3Opacity = useTransform(scrollYProgress, [0.74, 0.87], [0, 1])
-  const s3Y = useTransform(scrollYProgress, [0.74, 0.87], [30, 0])
-
-  if (staticCamera) {
-    return (
-      <section className="relative flex min-h-dvh items-end">
-        <Atmosphere />
-        {showCanvas && (
-          <Suspense fallback={null}>
-            <HeroCanvas
-              className="!absolute !inset-0"
-              fov={32}
-              position={SETTLE_POSITION}
-              dpr={[1, 1.5]}
-              frameloop="demand"
-              mode="static"
-            />
-          </Suspense>
-        )}
-        <div className="relative z-10 mx-auto w-full max-w-[1160px] px-5 pb-20 pt-32 md:px-8">
-          <HeroIntroCopy />
-        </div>
-      </section>
-    )
-  }
-
-  return (
-    <section
-      ref={trackRef}
-      className="relative h-[400vh]"
-      style={{
-        // The 300vh of track below the sticky viewport: keep it in the same
-        // atmosphere so full-page renders show a wash, never a dead band.
-        background: 'linear-gradient(180deg, #cdf0ea 0%, #9fdcd4 34%, #dff2ee 72%, #ffffff 100%)',
-      }}
-    >
-      <div className="sticky top-0 h-dvh overflow-hidden">
-        <Atmosphere />
-        {showCanvas && (
-          <Suspense fallback={null}>
-            <HeroCanvas
-              className="!absolute !inset-0"
-              fov={34}
-              position={[2.3, 0.95, 3.6]}
-              dpr={[1, 2]}
-              progress={scrollYProgress}
-              mode="scroll"
-            />
-          </Suspense>
-        )}
-
-        <div className="pointer-events-none absolute inset-0 z-10">
-          <div className="mx-auto h-full max-w-[1160px] px-5 md:px-8">
-            {/* Stage 1: the welcome, on screen at scroll zero. */}
-            <ClickableStage
-              opacity={s1Opacity}
-              style={{ y: s1Y }}
-              data-stage="1"
-              className="absolute bottom-[10dvh] left-5 max-w-[680px] md:left-8"
-            >
-              <HeroIntroCopy />
-            </ClickableStage>
-
-            {/* Stage 2: the flagship caption, mid-orbit. */}
-            <motion.div
-              style={{ opacity: s2Opacity }}
-              data-stage="2"
-              className="absolute left-5 top-[20dvh] max-w-[380px] md:left-8"
-            >
-              <p className="font-display text-lg font-bold text-white md:text-xl">The flagship.</p>
-              <p className="mt-2 text-[15px] leading-relaxed text-white/90 md:text-base">
-                The Hyundai Venue: cleaned, checked, and ready. Every car we hand over is a small
-                ambassador for the island.
-              </p>
-            </motion.div>
-
-            {/* Stage 3: the settle, keys out. */}
-            <ClickableStage
-              opacity={s3Opacity}
-              style={{ y: s3Y }}
-              data-stage="3"
-              className="absolute bottom-[12dvh] left-5 md:left-8"
-            >
-              <h2 className="font-display text-[clamp(2.2rem,4.4vw,3.8rem)] font-extrabold leading-none tracking-tight text-white [text-shadow:0_2px_24px_rgba(2,48,71,0.25)]">
-                Your island. Your keys.
-              </h2>
-              <div className="mt-7">
-                <BookCta large />
-              </div>
-            </ClickableStage>
+      {/* 4. Copy. */}
+      <div className="relative z-10 mx-auto w-full max-w-[1160px] px-5 pb-[9dvh] pt-32 md:px-8 md:pb-[14dvh]">
+        <motion.div
+          initial={reducedMotion ? false : { opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+        >
+          <p className="font-display text-lg font-bold text-cw-yellow [text-shadow:0_1px_12px_rgba(2,48,71,0.5)]">
+            Bon bini!
+          </p>
+          <h1 className="mt-3 max-w-[16ch] font-display text-[clamp(2.6rem,4.6vw,4.2rem)] font-extrabold leading-[1.02] tracking-tight text-white [text-shadow:0_2px_24px_rgba(2,48,71,0.5)]">
+            The island is yours.
+          </h1>
+          <p className="mt-4 max-w-[44ch] text-base leading-relaxed text-white [text-shadow:0_1px_14px_rgba(2,48,71,0.55)] md:text-lg">
+            {POSITIONING}
+          </p>
+          <div className="mt-8 flex flex-wrap items-center gap-x-7 gap-y-5">
+            <BookCta large />
+            <FleetLink />
           </div>
-        </div>
+        </motion.div>
       </div>
     </section>
-  )
-}
-
-/** A copy stage that only accepts clicks while it is actually visible. */
-function ClickableStage({
-  opacity,
-  style,
-  className,
-  children,
-  ...rest
-}: {
-  opacity: MotionValue<number>
-  style?: Record<string, unknown>
-  className?: string
-  children: React.ReactNode
-} & Record<`data-${string}`, string>) {
-  const pointerEvents = useTransform(opacity, (v) => (v > 0.35 ? 'auto' : 'none'))
-  return (
-    <motion.div style={{ opacity, pointerEvents, ...style }} className={className} {...rest}>
-      {children}
-    </motion.div>
-  )
-}
-
-/** Welcome copy block, shared by every hero variant (board 1 composition). */
-function HeroIntroCopy() {
-  return (
-    <div>
-      <p className="font-display text-lg font-bold text-cw-navy">Bon bini!</p>
-      <h1 className="mt-3 font-display text-[clamp(2.6rem,4.6vw,4.2rem)] font-extrabold leading-[1.02] tracking-tight text-white [text-shadow:0_2px_24px_rgba(2,48,71,0.35)]">
-        The island is yours.
-      </h1>
-      <p className="mt-4 max-w-[44ch] text-base leading-relaxed text-white [text-shadow:0_1px_14px_rgba(2,48,71,0.35)] md:text-lg">
-        {POSITIONING}
-      </p>
-      <div className="mt-8 flex flex-wrap items-center gap-6">
-        <BookCta large />
-        <FleetLink />
-      </div>
-    </div>
   )
 }
 
@@ -237,39 +165,5 @@ function FleetLink() {
       </span>
       <span className="absolute -bottom-1 left-0 h-px w-full bg-white/40" />
     </a>
-  )
-}
-
-/* ------------------------------------------------------------------ */
-/* Mobile / touch: non-pinned, calm turntable                          */
-/* ------------------------------------------------------------------ */
-
-function MobileHero({ webgl, spin }: { webgl: boolean; spin: boolean }) {
-  return (
-    <section className="relative flex min-h-dvh flex-col justify-end overflow-hidden">
-      <Atmosphere />
-      {webgl && (
-        <div className="absolute inset-x-0 top-[8dvh] h-[52dvh]">
-          <Suspense fallback={null}>
-            <HeroCanvas
-              fov={32}
-              position={[6.6, 2.7, 8.4]}
-              dpr={[1, 1.5]}
-              frameloop={spin ? 'always' : 'demand'}
-              mode={spin ? 'turntable' : 'static'}
-            />
-          </Suspense>
-        </div>
-      )}
-      <div className="relative z-10 mx-auto w-full max-w-[1160px] px-5 pb-16">
-        <motion.div
-          initial={{ opacity: 0, y: 24 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
-        >
-          <HeroIntroCopy />
-        </motion.div>
-      </div>
-    </section>
   )
 }
