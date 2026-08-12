@@ -14,10 +14,10 @@
 
 import type {
   BookingStatus,
-  CarStatus,
   PaymentStatus,
   PrepStatus,
   RentalTypeValue,
+  VehicleStatus,
 } from "../supabase/types";
 import type { LicenceLevel } from "./clients";
 
@@ -37,7 +37,16 @@ export interface AdminIdentity {
   lastSignInAt: string | null;
 }
 
-/** One booking, flattened for a table row. */
+/**
+ * One booking, flattened for a table row.
+ *
+ * TWO CAR IDENTITIES, deliberately. `carLabel` is the LISTING — what the guest
+ * booked and what the money was quoted against. `vehicleLabel` is the physical
+ * car with the guest's name on the key, which is the one an operator needs when
+ * they walk into the yard. On a listing backed by one car they say almost the
+ * same thing; on the Spark they do not, and the row that only carried the
+ * listing would send someone to the wrong car.
+ */
 export interface BookingRow {
   id: string;
   /** First 8 characters of the uuid — what an admin reads out on the phone. */
@@ -47,6 +56,12 @@ export interface BookingRow {
   clientPhone: string;
   carId: string;
   carLabel: string;
+  vehicleId: string;
+  /** "Grey · P-4821", or "Grey · no plate" until one is recorded. */
+  vehicleLabel: string;
+  /** False for a backup unit — worth flagging, since the guest booked from a
+   *  photo of a different car. */
+  vehicleIsPubliclyVisible: boolean;
   /** 'YYYY-MM-DD' */
   pickupDate: string;
   /** 'HH:MM:SS' */
@@ -78,7 +93,10 @@ export interface TimelineBar {
   bookingId: string;
   ref: string;
   clientName: string;
-  carId: string;
+  /** The PHYSICAL car this rental holds — which row the bar belongs in. A
+   *  listing with two vehicles gets two rows, because two guests can hold it at
+   *  once and drawing them in one row would look like a double booking. */
+  vehicleId: string;
   /** 'YYYY-MM-DD' — the real dates, unclipped, for the label and tooltip. */
   pickupDate: string;
   returnDate: string;
@@ -99,11 +117,18 @@ export interface TimelineBar {
   lane: number;
 }
 
-/** One car's row on the timeline. */
+/** One physical car's row on the timeline. */
 export interface TimelineRow {
-  carId: string;
-  carLabel: string;
-  carStatus: CarStatus;
+  vehicleId: string;
+  /** The listing, e.g. "Chevrolet Spark". */
+  listingId: string;
+  listingLabel: string;
+  /** The unit within it, e.g. "Grey · no plate". */
+  vehicleLabel: string;
+  status: VehicleStatus;
+  /** False for a backup unit the public site does not show. Drawn with a marker
+   *  so a row nobody can book directly is not mistaken for one they can. */
+  isPubliclyVisible: boolean;
   /** How many lanes this row needs — 1 on a normal month. */
   lanes: number;
   bars: TimelineBar[];
@@ -178,6 +203,7 @@ export interface BookingDetail {
     dateOfBirth: string | null;
     countryOfResidence: string | null;
   };
+  /** The LISTING that was sold. */
   car: {
     id: string;
     label: string;
@@ -186,11 +212,20 @@ export interface BookingDetail {
     category: string;
     transmission: string;
     seats: number;
-    status: CarStatus;
-    /** The car's rates TODAY, which are not necessarily what this rental was
-     *  quoted at — see `quotedPerDayCents`. */
+    /** The listing's rates TODAY, which are not necessarily what this rental
+     *  was quoted at — see `quotedPerDayCents`. */
     dailyRateCents: number;
     monthlyRateCents: number;
+  };
+  /** The PHYSICAL car assigned to it — the one whose keys the guest gets. */
+  vehicle: {
+    id: string;
+    label: string;
+    color: string;
+    plateNumber: string | null;
+    isPubliclyVisible: boolean;
+    status: VehicleStatus;
+    maintenanceNotes: string | null;
   };
   pickupDate: string;
   pickupTime: string;
@@ -342,6 +377,79 @@ export interface PaymentsOverview {
 export type PaymentWriteResult =
   | { ok: true; ledger: BookingLedger }
   | { ok: false; reason: "not_found" | "invalid"; message: string };
+
+/* ── bookings: taken by hand ───────────────────────────────────────────────── */
+
+/**
+ * One physical car as the manual booking form sees it.
+ *
+ * `availability` is null until dates are chosen — an unanswered question, not a
+ * "no". Once they are, the form can show WHY a car is unpickable, which is the
+ * difference between "already out with Marisol" and "in the shop": both stop
+ * the assignment, and only one is worth a phone call.
+ */
+export interface ManualBookingVehicle {
+  id: string;
+  listingId: string;
+  /** "Grey · no plate" — the unit, without the model repeated. */
+  label: string;
+  color: string;
+  plateNumber: string | null;
+  isPubliclyVisible: boolean;
+  status: VehicleStatus;
+  availability: "free" | "taken" | "off_road" | null;
+  /** Who has it over the chosen dates, when it is taken. */
+  takenBy: string | null;
+  takenUntil: string | null;
+}
+
+export interface ManualBookingListing {
+  id: string;
+  label: string;
+  category: string;
+  dailyRateCents: number;
+  monthlyRateCents: number;
+  vehicles: ManualBookingVehicle[];
+}
+
+/**
+ * Everything the manual booking screen needs in one round trip.
+ *
+ * `clients` is the existing directory, so a phone booking from a repeat guest
+ * attaches to the record they already have rather than creating a second one.
+ * The public flow matches on email; at a counter the operator can see the name.
+ */
+export interface ManualBookingOptions {
+  today: string;
+  /** Echoed back so the form knows which dates the availability answers are for. */
+  pickupDate: string | null;
+  returnDate: string | null;
+  listings: ManualBookingListing[];
+  clients: { id: string; fullName: string; email: string; phone: string; rentals: number }[];
+}
+
+/**
+ * The result of taking a booking by hand.
+ *
+ * `date_conflict` here means something different from the public flow's: an
+ * admin NAMED a car, so there is no next candidate to fall back on. Saying so
+ * plainly is the point — silently moving the guest to another vehicle would
+ * undo the one thing this screen exists to allow.
+ */
+export type ManualBookingResult =
+  | { ok: true; bookingId: string; ref: string; vehicleLabel: string }
+  | {
+      ok: false;
+      reason:
+        | "not_found"
+        | "invalid"
+        | "vehicle_off_road"
+        | "date_conflict"
+        | "below_minimum"
+        | "custom_quote"
+        | "monthly_unavailable";
+      message: string;
+    };
 
 /* ── clients ───────────────────────────────────────────────────────────────── */
 
@@ -501,31 +609,73 @@ export interface FleetCarStats {
   averageRentalDays: number;
 }
 
-/** One car on the fleet overview. */
-export interface FleetCarRow {
+/**
+ * One PHYSICAL car in the CRM.
+ *
+ * Everything that describes a car's condition rather than its price lives here
+ * and not on the listing above it: status, notes, and how long it has been off
+ * the road are facts about a vehicle, and a listing backed by two cars can have
+ * one of them in the shop while the other earns.
+ */
+export interface FleetVehicleRow {
   id: string;
+  listingId: string;
+  /** "Black · P-4821", or "Black · no plate" when none is recorded. */
   label: string;
-  model: string;
   color: string;
-  category: string;
-  photoUrl: string;
-  dailyRateCents: number;
-  /** Flat price of a ~30-day rental. 0 means this car is not offered monthly. */
-  monthlyRateCents: number;
-  status: CarStatus;
+  plateNumber: string | null;
+  /** True for the unit the listing's photo shows. */
+  isPubliclyVisible: boolean;
+  status: VehicleStatus;
   /** INTERNAL — never goes near a public payload. */
   maintenanceNotes: string | null;
   offRoadSince: string | null;
   /** Whole days since it left the road, or null while it is on it. */
   offRoadDays: number | null;
   stats: FleetCarStats;
-  /** Set while the car is out on a rental at this moment. */
+  /** Set while this car is out on a rental at this moment. */
   onRentalUntil: string | null;
   onRentalFor: string | null;
+  onRentalBookingId: string | null;
   /** Rentals still ahead of it, and the first of them. */
   upcomingCount: number;
   nextPickupDate: string | null;
   nextPickupFor: string | null;
+  updatedAt: string;
+}
+
+/**
+ * One LISTING on the fleet overview, with the cars that back it.
+ *
+ * `stats` is the listing's, summed over its vehicles and measured against their
+ * combined capacity: two Sparks over 90 days is 180 car-days, and a listing that
+ * rented one of them the whole time is at 50%, not 100%. Reading the pair the
+ * other way round is the mistake this shape is arranged to prevent — the
+ * headline number belongs to the listing, and every row under it is a car.
+ */
+export interface FleetCarRow {
+  id: string;
+  label: string;
+  model: string;
+  /** The colour in the listing's photo. The units may differ — see `vehicles`. */
+  color: string;
+  category: string;
+  photoUrl: string;
+  description: string | null;
+  dailyRateCents: number;
+  /** Flat price of a ~30-day rental. 0 means this car is not offered monthly. */
+  monthlyRateCents: number;
+  vehicles: FleetVehicleRow[];
+  /** Counts across `vehicles`, so a table can show them without re-deriving. */
+  vehicleCount: number;
+  vehiclesOnRoad: number;
+  vehiclesOutNow: number;
+  /** Units backing this listing that the public site does not show. */
+  hiddenCount: number;
+  /** True when at least one vehicle is on the road — i.e. the listing can still
+   *  be booked for some dates. False means it has left the site entirely. */
+  bookable: boolean;
+  stats: FleetCarStats;
 }
 
 export interface FleetOverview {
@@ -536,7 +686,11 @@ export interface FleetOverview {
   windowEnd: string;
   cars: FleetCarRow[];
   totals: {
-    cars: number;
+    /** Listings — what a guest sees. */
+    listings: number;
+    /** Physical cars — what CW owns. The two differ, which is the point. */
+    vehicles: number;
+    hidden: number;
     offRoad: number;
     outNow: number;
     collectedCents: number;
@@ -544,10 +698,12 @@ export interface FleetOverview {
   };
 }
 
-/** A rental in a car's own schedule. */
+/** A rental in a listing's schedule, carrying which car took it. */
 export interface CarRental {
   bookingId: string;
   clientName: string;
+  vehicleId: string;
+  vehicleLabel: string;
   pickupDate: string;
   pickupTime: string;
   returnDate: string;
@@ -559,7 +715,8 @@ export interface CarRental {
   prepStatus: PrepStatus;
 }
 
-/** One car in full: what it is, what it earns, and who has it when. */
+/** One LISTING in full: what it is, what it earns, the cars behind it, and who
+ *  has each of them when. */
 export interface FleetCarDetail {
   id: string;
   label: string;
@@ -569,46 +726,65 @@ export interface FleetCarDetail {
   transmission: string;
   seats: number;
   photoUrl: string;
+  description: string | null;
   dailyRateCents: number;
   /** Flat price of a ~30-day rental. 0 means this car is not offered monthly. */
   monthlyRateCents: number;
-  status: CarStatus;
-  maintenanceNotes: string | null;
-  offRoadSince: string | null;
-  offRoadDays: number | null;
   updatedAt: string;
   today: string;
+  /** The listing's numbers, over its vehicles' combined capacity. */
   stats: FleetCarStats;
 
-  /** The month strip: same shape and same rules as the bookings calendar. */
+  /** The physical cars backing it, visible unit first — the same order the
+   *  booking flow assigns them in. */
+  vehicles: FleetVehicleRow[];
+  bookable: boolean;
+
+  /** The month strip: same shape and same rules as the bookings calendar, with
+   *  ONE ROW PER VEHICLE. */
   month: string;
   monthLabel: string;
   days: string[];
   prevMonth: string;
   nextMonth: string;
   currentMonth: string;
-  timeline: TimelineRow;
+  timeline: TimelineRow[];
 
-  /** Out on the road right now, if it is. */
-  onRental: {
-    bookingId: string;
-    clientName: string;
-    returnDate: string;
-    returnTime: string;
-  } | null;
+  /** Every rental on this listing that has not been returned, across all of its
+   *  vehicles. */
   upcoming: CarRental[];
 }
 
 /**
- * The result of a fleet write.
+ * The result of a listing write (rates, photo, description).
+ *
+ * Listings no longer carry availability, so this cannot take a car off the road
+ * and has nothing to warn about — that moved to VehicleWriteResult.
+ */
+export type CarWriteResult =
+  { ok: true; carId: string } | { ok: false; reason: "not_found" | "invalid"; message: string };
+
+/**
+ * The result of a vehicle write.
  *
  * `wentOffRoad` + `affectedRentals` exist so the page can tell the truth after
  * the fact: the status change is applied, existing rentals are untouched, and
  * here is how many of them there are to deal with by hand.
+ *
+ * `listingStillBookable` is the new half of that truth. Taking one of two
+ * Sparks off the road changes nothing a guest can see; taking the last one off
+ * removes the listing from the site. The page must be able to say which just
+ * happened.
  */
-export type CarWriteResult =
-  | { ok: true; carId: string; wentOffRoad: boolean; affectedRentals: number }
-  | { ok: false; reason: "not_found" | "invalid"; message: string };
+export type VehicleWriteResult =
+  | {
+      ok: true;
+      vehicleId: string;
+      wentOffRoad: boolean;
+      affectedRentals: number;
+      listingStillBookable: boolean;
+    }
+  | { ok: false; reason: "not_found" | "invalid" | "conflict"; message: string };
 
 /** A pickup or a return on the schedule — the two halves of "what happens next". */
 export interface MovementRow {
@@ -622,6 +798,8 @@ export interface MovementRow {
   clientName: string;
   clientPhone: string;
   carLabel: string;
+  /** Which physical car to fetch or expect back. */
+  vehicleLabel: string;
   location: string;
   bookingStatus: BookingStatus;
   paymentStatus: PaymentStatus;
@@ -629,11 +807,17 @@ export interface MovementRow {
   daysAway: number;
 }
 
-/** One car and what it is doing right now. */
+/** One PHYSICAL car and what it is doing right now. */
 export interface FleetStatusRow {
   id: string;
+  /** "Chevrolet Spark · Grey" — the listing and the unit, since two rows can
+   *  otherwise carry the same model name. */
   label: string;
-  status: CarStatus;
+  listingId: string;
+  isPubliclyVisible: boolean;
+  status: VehicleStatus;
+  /** The LISTING's daily rate. A vehicle has no price of its own — two cars
+   *  rented as one listing are rented at one price. */
   dailyRateCents: number;
   /** Set when the car is out on a rental at this moment. */
   onRentalUntil: string | null;
@@ -714,8 +898,15 @@ export interface DashboardData {
   /** Next pickups and returns, merged and sorted by when they happen. */
   upcoming: MovementRow[];
 
+  /**
+   * OCCUPANCY IS COUNTED IN PHYSICAL CARS, not in listings. With two Sparks,
+   * "1 of 5 out" would be wrong twice over: the fleet is six cars, and one
+   * Spark out leaves the Spark listing still bookable. Every figure here is a
+   * vehicle count; `listings` is carried alongside so the UI can say both.
+   */
   fleet: {
     total: number;
+    listings: number;
     /** Cars on a rental at this instant. */
     outNow: number;
     /** On the road and free right now. */

@@ -1,5 +1,11 @@
 /**
- * The month timeline: one row per car, one column per day, one bar per booking.
+ * The month timeline: one row per PHYSICAL CAR, one column per day, one bar per
+ * booking.
+ *
+ * ROWS ARE VEHICLES, NOT LISTINGS (migration 0005). A listing backed by two cars
+ * gets two rows, because both can be rented over the same week — drawing that in
+ * one row would stack the bars into lanes, which is the shape this calendar uses
+ * to mean "these overlap", i.e. exactly the wrong message.
  *
  * Presentational only. Every bar arrives from the server with its column, span
  * and lane already computed (src/lib/admin/timeline.ts), so this file is layout
@@ -161,9 +167,12 @@ export function TimelineGrid({
           </div>
         </div>
 
-        {/* ── one row per car ──────────────────────────────────────────── */}
+        {/* ── one row per PHYSICAL car ─────────────────────────────────────
+            Two rows can carry the same listing name, which is the point: they
+            are two cars, they can be out at the same time, and the unit line
+            below the model is what tells them apart. */}
         {rows.map((row) => (
-          <div key={row.carId} className="flex border-b border-cw-navy/8 last:border-b-0">
+          <div key={row.vehicleId} className="flex border-b border-cw-navy/8 last:border-b-0">
             {showCarColumn && (
               <div
                 style={{ width: CAR_COL }}
@@ -171,13 +180,27 @@ export function TimelineGrid({
               >
                 <span
                   className="truncate text-[12px] font-semibold text-cw-navy"
-                  title={row.carLabel}
+                  title={`${row.listingLabel} — ${row.vehicleLabel}`}
                 >
-                  {row.carLabel}
+                  {row.listingLabel}
+                </span>
+                <span className="truncate text-[11px] text-cw-ink/55">
+                  {row.vehicleLabel}
+                  {/* A unit the public site never shows. Marked, because
+                      "why is there a second Spark?" is the first question this
+                      row raises and the cheapest one to answer in place. */}
+                  {!row.isPubliclyVisible && (
+                    <span
+                      className="ml-1 rounded bg-cw-navy/8 px-1 text-[10px] font-semibold uppercase tracking-[0.04em] text-cw-navy/60"
+                      title="Backup unit — not shown on the public site"
+                    >
+                      hidden
+                    </span>
+                  )}
                 </span>
                 <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-cw-ink/45">
-                  {row.carStatus !== "available" ? (
-                    <StatusPill value={row.carStatus} title="Fleet status" />
+                  {row.status !== "available" ? (
+                    <StatusPill value={row.status} title="Fleet status" />
                   ) : (
                     <>
                       {row.bars.length} {row.bars.length === 1 ? "booking" : "bookings"}
@@ -219,7 +242,7 @@ export function TimelineGrid({
           </div>
         ))}
 
-        {rows.length === 0 && <EmptyState>No cars in the fleet yet.</EmptyState>}
+        {rows.length === 0 && <EmptyState>No vehicles in the fleet yet.</EmptyState>}
       </div>
     </div>
   );

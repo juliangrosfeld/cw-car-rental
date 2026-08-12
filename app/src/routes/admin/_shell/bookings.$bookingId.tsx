@@ -204,11 +204,46 @@ function BookingDetailPage() {
                     : "No length discount applied"
               }
             />
-            <Field label="Car" value={booking.car.label} />
+            {/* Listing and vehicle, labelled as the different things they are.
+                The guest booked the first; the second is the car they are
+                handed, and on a listing backed by two cars it is the only field
+                on this page that says which. */}
             <Field
-              label="Car detail"
-              value={`${booking.car.category} · ${booking.car.transmission} · ${booking.car.seats} seats`}
+              label="Listing booked"
+              value={booking.car.label}
+              hint={`${booking.car.category} · ${booking.car.transmission} · ${booking.car.seats} seats`}
             />
+            <Field
+              label="Car assigned"
+              value={
+                <span className="flex flex-wrap items-center gap-1.5">
+                  {booking.vehicle.label}
+                  {!booking.vehicle.isPubliclyVisible && (
+                    <span className="rounded bg-cw-navy/8 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.04em] text-cw-navy/60">
+                      Backup
+                    </span>
+                  )}
+                  {booking.vehicle.status !== "available" && (
+                    <StatusPill value={booking.vehicle.status} title="This car's standing status" />
+                  )}
+                </span>
+              }
+              hint={
+                booking.vehicle.isPubliclyVisible
+                  ? "The car shown in the listing's photo."
+                  : "A backup unit. The guest booked from a photo of a different car of the same model."
+              }
+            />
+            {/* Only when there is something wrong with the car itself. A rental
+                due to go out on a car that is in the shop is the expensive
+                surprise this line exists to prevent. */}
+            {booking.vehicle.maintenanceNotes && (
+              <Field
+                label="Notes on this car"
+                value={booking.vehicle.maintenanceNotes}
+                hint="Internal — never read this to a guest."
+              />
+            )}
           </div>
         </Panel>
 
@@ -220,9 +255,7 @@ function BookingDetailPage() {
             </p>
             <p className="mt-1 text-[12px] text-cw-ink/55">
               {monthly ? (
-                <>
-                  Flat monthly rate over {booking.days} days, quoted when the booking was taken
-                </>
+                <>Flat monthly rate over {booking.days} days, quoted when the booking was taken</>
               ) : (
                 <>
                   {formatMoney(booking.quotedPerDayCents)} × {booking.days}{" "}

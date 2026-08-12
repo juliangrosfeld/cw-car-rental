@@ -180,7 +180,12 @@ function DashboardPage() {
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-[13px] font-semibold text-cw-navy">
                       {m.clientName}
-                      <span className="font-normal text-cw-ink/55"> · {m.carLabel}</span>
+                      {/* The listing, then the actual car. A pickup line that
+                          named only the model would not say which key. */}
+                      <span className="font-normal text-cw-ink/55">
+                        {" "}
+                        · {m.carLabel} <span className="text-cw-ink/40">({m.vehicleLabel})</span>
+                      </span>
                     </p>
                     <p className="mt-0.5 truncate text-[12px] text-cw-ink/55">
                       {formatDate(m.date)}, {formatTime(m.time)} · {m.location}
@@ -210,7 +215,11 @@ function DashboardPage() {
         <Panel
           className="lg:self-start"
           title="Occupancy now"
-          subtitle={`${fleet.outNow} of ${fleet.total} cars on rental`}
+          // PHYSICAL cars, not listings: two Sparks are two cars that can be out
+          // at once, and counting listings here would put the fleet at five and
+          // overstate how busy it is. The listing count is said alongside so the
+          // two numbers cannot be mistaken for each other.
+          subtitle={`${fleet.outNow} of ${fleet.total} cars on rental · ${fleet.listings} listings`}
         >
           <div className="px-4 pb-4 pt-4">
             <div className="flex items-baseline gap-2">
@@ -255,8 +264,18 @@ function DashboardPage() {
             <ul className="mt-4 divide-y divide-cw-navy/8 border-t border-cw-navy/8">
               {fleet.cars.map((car) => (
                 <li key={car.id} className="flex items-center justify-between gap-3 py-2">
-                  <span className="truncate text-[13px] font-semibold text-cw-navy">
-                    {car.label}
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="truncate text-[13px] font-semibold text-cw-navy">
+                      {car.label}
+                    </span>
+                    {!car.isPubliclyVisible && (
+                      <span
+                        className="shrink-0 rounded bg-cw-navy/8 px-1 text-[10px] font-semibold uppercase tracking-[0.04em] text-cw-navy/60"
+                        title="Backup unit — not shown on the public site"
+                      >
+                        backup
+                      </span>
+                    )}
                   </span>
                   {car.onRentalUntil ? (
                     <span className="shrink-0 text-[11px] text-cw-ink/60">
@@ -300,7 +319,10 @@ function DashboardPage() {
                   {week.bookings.map((b) => (
                     <tr key={b.id}>
                       <Td className="font-semibold text-cw-navy">{b.clientName}</Td>
-                      <Td className="text-cw-ink/70">{b.carLabel}</Td>
+                      <Td className="text-cw-ink/70">
+                        {b.carLabel}
+                        <span className="block text-[11px] text-cw-ink/45">{b.vehicleLabel}</span>
+                      </Td>
                       <Td className="whitespace-nowrap text-cw-ink/70">
                         {formatDateShort(b.pickupDate)} → {formatDateShort(b.returnDate)}
                         <span className="text-cw-ink/45"> · {b.days}d</span>

@@ -220,7 +220,20 @@ function BookingsPage() {
           ? "Who has which car, and when"
           : `${list?.total ?? 0} ${list?.total === 1 ? "booking" : "bookings"} matching these filters`
       }
-      actions={<ViewToggle view={view} />}
+      actions={
+        <div className="flex items-center gap-2">
+          {/* The counter's way in. Everything else on this page reacts to
+              bookings that arrived through the site; this is the one that starts
+              one, on a car chosen by hand. */}
+          <Link
+            to="/admin/bookings/new"
+            className="rounded-lg border border-cw-teal bg-cw-teal px-3 py-1.5 font-display text-[13px] font-bold text-white transition-colors hover:border-cw-teal-dark hover:bg-cw-teal-dark"
+          >
+            + New booking
+          </Link>
+          <ViewToggle view={view} />
+        </div>
+      }
     >
       <Notice message={notice} onClear={() => setNotice(null)} />
 
@@ -316,7 +329,24 @@ function BookingsPage() {
                             {b.ref} · {b.clientPhone}
                           </span>
                         </Td>
-                        <Td className="text-cw-ink/70">{b.carLabel}</Td>
+                        {/* The listing over the physical car, in that order:
+                            the first is what was sold, the second is the key to
+                            take off the board. A row that showed only the
+                            listing would send someone to the wrong Spark. */}
+                        <Td className="text-cw-ink/70">
+                          {b.carLabel}
+                          <span className="block text-[11px] text-cw-ink/45">
+                            {b.vehicleLabel}
+                            {!b.vehicleIsPubliclyVisible && (
+                              <span
+                                className="ml-1 rounded bg-cw-navy/8 px-1 text-[10px] font-semibold uppercase tracking-[0.04em] text-cw-navy/60"
+                                title="Backup unit — not the car shown on the site"
+                              >
+                                backup
+                              </span>
+                            )}
+                          </span>
+                        </Td>
                         <Td className="whitespace-nowrap text-cw-ink/70">
                           {formatDateShort(b.pickupDate)}, {formatTime(b.pickupTime)}
                           <span className="block text-[11px] text-cw-ink/45">

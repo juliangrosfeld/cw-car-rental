@@ -36,7 +36,8 @@
  */
 import { supabaseAdmin } from "../supabase/admin.server";
 import { rentalDays } from "../booking/rental";
-import type { BookingStatus, CarStatus, PaymentStatus, PrepStatus } from "../supabase/types";
+import type { BookingStatus, PaymentStatus, PrepStatus, VehicleStatus } from "../supabase/types";
+import { vehicleLabel } from "./fleet";
 import {
   addDays,
   curacaoMidnightInstant,
@@ -69,10 +70,11 @@ const LATE_PICKUP_GRACE_DAYS = 3;
 const OVERDUE_RETURN_GRACE_DAYS = 7;
 
 const BOOKING_SELECT = `
-  id, car_id, pickup_date, pickup_time, return_date, return_time,
+  id, car_id, vehicle_id, pickup_date, pickup_time, return_date, return_time,
   pickup_location, return_location, total_price,
   booking_status, payment_status, prep_status, created_at,
   cars ( id, model, color ),
+  vehicles ( id, color, plate_number, is_publicly_visible ),
   clients ( full_name, email, phone )
 `;
 
@@ -81,6 +83,7 @@ const BOOKING_SELECT = `
 interface RawBookingRow {
   id: string;
   car_id: string;
+  vehicle_id: string;
   pickup_date: string;
   pickup_time: string;
   return_date: string;
@@ -93,14 +96,27 @@ interface RawBookingRow {
   prep_status: PrepStatus;
   created_at: string;
   cars: { id: string; model: string; color: string } | null;
+  vehicles: {
+    id: string;
+    color: string;
+    plate_number: string | null;
+    is_publicly_visible: boolean;
+  } | null;
   clients: { full_name: string; email: string; phone: string } | null;
 }
 
-/** "Hyundai Venue · Red" — the fleet has two Versas, so the colour is not
- *  decoration, it is how an admin tells the cars apart. */
+/** "Hyundai Venue · Red" — the LISTING. The fleet has two Versas, so the colour
+ *  is not decoration, it is how an admin tells them apart. */
 function carLabel(car: { model: string; color: string } | null): string {
   if (!car) return "Unknown car";
   return `${car.model} · ${car.color}`;
+}
+
+/** "Grey · P-4821" — the PHYSICAL car. On a movement row this is the one that
+ *  matters: it says which keys to take off the board. */
+function unitLabel(vehicle: { color: string; plate_number: string | null } | null): string {
+  if (!vehicle) return "Unassigned";
+  return vehicleLabel(vehicle);
 }
 
 function toBookingRow(raw: RawBookingRow): BookingRow {
@@ -112,6 +128,9 @@ function toBookingRow(raw: RawBookingRow): BookingRow {
     clientPhone: raw.clients?.phone ?? "",
     carId: raw.car_id,
     carLabel: carLabel(raw.cars),
+    vehicleId: raw.vehicle_id,
+    vehicleLabel: unitLabel(raw.vehicles),
+    vehicleIsPubliclyVisible: raw.vehicles?.is_publicly_visible ?? true,
     pickupDate: raw.pickup_date,
     pickupTime: raw.pickup_time,
     returnDate: raw.return_date,
@@ -140,6 +159,7 @@ function toMovement(raw: RawBookingRow, kind: MovementRow["kind"], today: string
     clientName: raw.clients?.full_name ?? "Unknown guest",
     clientPhone: raw.clients?.phone ?? "",
     carLabel: carLabel(raw.cars),
+    vehicleLabel: unitLabel(raw.vehicles),
     location: kind === "pickup" ? raw.pickup_location : raw.return_location,
     bookingStatus: raw.booking_status,
     paymentStatus: raw.payment_status,
@@ -226,13 +246,20 @@ export async function getDashboardData(): Promise<DashboardData> {
       .limit(MOVEMENT_LIMIT + 4),
 
     // ── the fleet ─────────────────────────────────────────────────────────
-    db.from("cars").select("*").order("daily_rate", { ascending: false }),
+    // PHYSICAL cars, joined to the listing they are rented as. Occupancy is a
+    // question about metal, not about products: with two Sparks, "1 of 5 out"
+    // would understate the fleet and overstate how busy it is.
+    db
+      .from("vehicles")
+      .select(
+        "id, listing_id, color, plate_number, is_publicly_visible, status, created_at, cars ( model, color, daily_rate )",
+      ),
 
     // ── what is out on the road at this exact moment ──────────────────────
     // Half-open [pickup, return): a car returning at 10:00 is free at 10:00.
     db
       .from("bookings")
-      .select("car_id, return_date, return_time, clients ( full_name )")
+      .select("vehicle_id, return_date, return_time, clients ( full_name )")
       .neq("booking_status", CANCELLED)
       .lte("pickup_at", now.timestamp)
       .gt("return_at", now.timestamp),
@@ -351,34 +378,54 @@ export async function getDashboardData(): Promise<DashboardData> {
     .slice(0, MOVEMENT_LIMIT);
 
   // ── occupancy ──────────────────────────────────────────────────────────────
-  const cars = (carsRes.data ?? []) as {
+  const vehicles = (carsRes.data ?? []) as unknown as {
     id: string;
-    model: string;
+    listing_id: string;
     color: string;
-    status: CarStatus;
-    daily_rate: number;
+    plate_number: string | null;
+    is_publicly_visible: boolean;
+    status: VehicleStatus;
+    created_at: string;
+    cars: { model: string; color: string; daily_rate: number } | null;
   }[];
 
   const occupied = (occupiedRes.data ?? []) as unknown as {
-    car_id: string;
+    vehicle_id: string;
     return_date: string;
     return_time: string;
     clients: { full_name: string } | null;
   }[];
 
-  const occupiedByCar = new Map(occupied.map((row) => [row.car_id, row]));
+  const occupiedByVehicle = new Map(occupied.map((row) => [row.vehicle_id, row]));
 
-  const fleetCars: FleetStatusRow[] = cars.map((car) => {
-    const rental = occupiedByCar.get(car.id);
-    return {
-      id: car.id,
-      label: carLabel(car),
-      status: car.status,
-      dailyRateCents: car.daily_rate,
-      onRentalUntil: rental ? rental.return_date : null,
-      onRentalFor: rental?.clients?.full_name ?? null,
-    };
-  });
+  const fleetCars: FleetStatusRow[] = [...vehicles]
+    .sort((a, b) => {
+      // Dearest listing first, matching every other fleet ordering in the CRM,
+      // then the visible unit before its backup.
+      const rate = (b.cars?.daily_rate ?? 0) - (a.cars?.daily_rate ?? 0);
+      if (rate !== 0) return rate;
+      if (a.listing_id !== b.listing_id) return a.listing_id < b.listing_id ? -1 : 1;
+      if (a.is_publicly_visible !== b.is_publicly_visible) return a.is_publicly_visible ? -1 : 1;
+      return a.created_at < b.created_at ? -1 : 1;
+    })
+    .map((vehicle) => {
+      const rental = occupiedByVehicle.get(vehicle.id);
+      return {
+        id: vehicle.id,
+        // The MODEL plus THIS car's colour, not the listing's: on the dashboard
+        // the two Sparks must be tellable apart at a glance, and "Chevrolet
+        // Spark · Black" twice would be worse than useless.
+        label: `${vehicle.cars?.model ?? "Unknown"} · ${vehicle.color}`,
+        listingId: vehicle.listing_id,
+        isPubliclyVisible: vehicle.is_publicly_visible,
+        status: vehicle.status,
+        dailyRateCents: vehicle.cars?.daily_rate ?? 0,
+        onRentalUntil: rental ? rental.return_date : null,
+        onRentalFor: rental?.clients?.full_name ?? null,
+      };
+    });
+
+  const listingCount = new Set(vehicles.map((v) => v.listing_id)).size;
 
   // A car that is out is counted as out even if someone also flagged it for
   // maintenance — where the car physically is beats what the record says.
@@ -416,11 +463,13 @@ export async function getDashboardData(): Promise<DashboardData> {
     },
     upcoming,
     fleet: {
-      total: cars.length,
+      total: fleetCars.length,
+      listings: listingCount,
       outNow,
-      availableNow: cars.length - outNow - offRoad,
+      availableNow: fleetCars.length - outNow - offRoad,
       offRoad,
-      occupancyPct: cars.length === 0 ? 0 : Math.round((outNow / cars.length) * 1000) / 10,
+      occupancyPct:
+        fleetCars.length === 0 ? 0 : Math.round((outNow / fleetCars.length) * 1000) / 10,
       cars: fleetCars,
     },
   };

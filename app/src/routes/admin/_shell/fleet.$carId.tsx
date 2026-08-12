@@ -1,29 +1,28 @@
 /**
- * /admin/fleet/:carId — one car: what it is, what it earns, who has it when.
+ * /admin/fleet/:carId — one LISTING: what it costs, what it earns, which cars
+ * back it, and who has each of them when.
  *
- * THE EDIT FORM IS THE POINT OF THIS PAGE, and two of its fields reach further
- * than they look, so both say so on screen rather than in a comment only a
- * developer reads:
+ * TWO EDITORS, BECAUSE THERE ARE TWO THINGS TO EDIT (migration 0005), and
+ * keeping them apart is what stops a rate change and a trip to the garage from
+ * looking like the same kind of decision:
  *
- *   Rates   change what FUTURE bookings are quoted. Neither can reprice a
- *           reservation that already exists — `bookings.total_price` was struck
- *           when the booking was taken and nothing recomputes it.
+ *   THE LISTING   rates, photo, guest-facing copy. Changing a rate reaches
+ *                 FUTURE quotes only — `bookings.total_price` was struck when
+ *                 the booking was taken and nothing recomputes it, so a rate
+ *                 rise cannot reprice a reservation a guest already holds.
  *
- *           There are two, because there are two products: a daily rate that
- *           length discounts come off, and a flat monthly rate that they do not
- *           (it is already the long-stay price). A monthly rate of zero means
- *           the car is not offered by the month at all, which the form says in
- *           words rather than leaving an owner to infer from a blank.
- *
- *   Standing availability   anything other than "on the road" removes the car
- *           from the booking page for every future date at once. It does NOT
- *           cancel, move or otherwise touch a rental already on the books; if
- *           there are any, the page says how many, before and after saving,
- *           because that is a job for a human and a phone call.
+ *   EACH CAR      standing availability, plate, colour, maintenance notes.
+ *                 Taking one off the road stops it being assigned to new
+ *                 bookings and touches nothing already on the books. Whether a
+ *                 guest can tell depends on what else backs the listing: with a
+ *                 second car behind it, the site does not change at all; with
+ *                 none, the listing leaves the booking page. The form says which
+ *                 before you save, and the result says which happened after.
  *
  * The month strip below is the same component, geometry and colours as the
- * bookings calendar (src/components/admin/bookings-timeline.tsx), so a car's own
- * schedule and the fleet calendar can never disagree about where a bar starts.
+ * bookings calendar (src/components/admin/bookings-timeline.tsx), with ONE ROW
+ * PER CAR — so two rentals running at once on a two-car listing read as a good
+ * week rather than as a double booking.
  */
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
@@ -40,14 +39,18 @@ import {
   Td,
   Th,
 } from "../../../components/admin/ui";
-import { fetchAdminFleetCar, updateFleetCar } from "../../../lib/api/admin.functions";
 import {
-  CAR_STATUS_LABEL,
-  CAR_STATUS_MEANING,
-  CAR_STATUS_ORDER,
+  fetchAdminFleetCar,
+  updateFleetCar,
+  updateFleetVehicle,
+} from "../../../lib/api/admin.functions";
+import {
   DEFAULT_STATS_WINDOW,
   STATS_WINDOWS,
   STATS_WINDOW_LABEL,
+  VEHICLE_STATUS_LABEL,
+  VEHICLE_STATUS_MEANING,
+  VEHICLE_STATUS_ORDER,
   isStatsWindow,
   type StatsWindow,
 } from "../../../lib/admin/fleet";
@@ -60,12 +63,9 @@ import {
   formatMoney,
   formatTime,
 } from "../../../lib/admin/format";
-import {
-  DISCOUNT_TIER_SUMMARY,
-  MONTHLY_PERIOD_DAYS,
-} from "../../../lib/booking/rental";
-import type { CarStatus } from "../../../lib/supabase/types";
-import type { FleetCarDetail } from "../../../lib/admin/types";
+import { DISCOUNT_TIER_SUMMARY, MONTHLY_PERIOD_DAYS } from "../../../lib/booking/rental";
+import type { VehicleStatus } from "../../../lib/supabase/types";
+import type { FleetCarDetail, FleetVehicleRow } from "../../../lib/admin/types";
 
 interface CarSearch {
   month?: string;
@@ -92,17 +92,20 @@ export const Route = createFileRoute("/admin/_shell/fleet/$carId")({
   component: CarPage,
 });
 
+const inputClass =
+  "w-full rounded-lg border border-cw-navy/15 bg-white px-3 py-2 text-[13px] text-cw-ink outline-none transition-colors focus:border-cw-teal focus:ring-2 focus:ring-cw-teal/20";
+
 function CarPage() {
   const { admin, car } = Route.useLoaderData();
   const search = Route.useSearch();
 
   if (!car) {
     return (
-      <AdminShell admin={admin} title="Car not found">
+      <AdminShell admin={admin} title="Listing not found">
         <Panel>
           <div className="px-4 py-8 text-center">
             <p className="text-[13px] text-cw-ink/60">
-              No car with that id is in the fleet. It may have been renamed.
+              No listing with that id is in the fleet. It may have been renamed.
             </p>
             <Link
               to="/admin/fleet"
@@ -116,6 +119,8 @@ function CarPage() {
     );
   }
 
+  const offRoad = car.vehicles.filter((v) => v.status !== "available");
+
   return (
     <AdminShell
       admin={admin}
@@ -123,37 +128,44 @@ function CarPage() {
       subtitle={`${car.category} · ${car.transmission} · ${car.seats} seats · ${formatMoney(
         car.dailyRateCents,
       )} a day · ${
-        car.monthlyRateCents > 0 ? `${formatMoney(car.monthlyRateCents)} a month` : "no monthly rate"
+        car.monthlyRateCents > 0
+          ? `${formatMoney(car.monthlyRateCents)} a month`
+          : "no monthly rate"
       }`}
       actions={
         <div className="flex items-center gap-2">
-          <StatusPill value={car.status} title="Standing availability" />
+          <span className="rounded-md bg-cw-navy/6 px-2 py-1 text-[12px] font-semibold text-cw-navy/70">
+            {car.vehicles.length} {car.vehicles.length === 1 ? "car" : "cars"}
+          </span>
           <Link
             to="/admin/fleet"
             className="rounded-lg border border-cw-navy/15 bg-white px-3 py-1.5 text-[13px] font-semibold text-cw-navy transition-colors hover:border-cw-teal hover:text-cw-teal"
           >
-            ‹ All cars
+            ‹ All listings
           </Link>
         </div>
       }
     >
-      {/* Standing state first: if the car is off the road, that is the headline
-          and everything else on the page is context for it. */}
-      {car.status !== "available" && (
-        <div className="mb-3 rounded-lg bg-cw-yellow-soft px-3 py-2.5 text-[13px] text-[#8a6a04]">
-          <span className="font-semibold">
-            {CAR_STATUS_LABEL[car.status]}
-            {car.offRoadDays !== null &&
-              ` for ${car.offRoadDays} ${car.offRoadDays === 1 ? "day" : "days"}`}
-            .
-          </span>{" "}
-          It is not being offered for new bookings. Rentals already on the books are unaffected —
+      {/* Standing state first. Which of the two sentences this is depends on
+          whether anything is left on the road, which is exactly the fact the old
+          single-car version of this page could not express. */}
+      {!car.bookable ? (
+        <div className="mb-3 rounded-lg bg-[#fdecec] px-3 py-2.5 text-[13px] text-[#b3261e]">
+          <span className="font-semibold">Every car on this listing is off the road.</span> It is
+          not being offered for new bookings at all. Rentals already on the books are unaffected —
           they are listed below.
         </div>
-      )}
+      ) : offRoad.length > 0 ? (
+        <div className="mb-3 rounded-lg bg-cw-yellow-soft px-3 py-2.5 text-[13px] text-[#8a6a04]">
+          <span className="font-semibold">
+            {offRoad.length} of {car.vehicles.length} cars off the road.
+          </span>{" "}
+          The listing is still bookable — guests see no change while another car can take the dates.
+        </div>
+      ) : null}
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <CarEditor key={car.updatedAt} car={car} />
+        <ListingEditor key={car.updatedAt} car={car} />
 
         <div className="space-y-4">
           <Panel
@@ -173,7 +185,7 @@ function CarPage() {
               <Stat
                 label="Utilisation"
                 value={`${car.stats.utilisationPct}%`}
-                hint={`${car.stats.daysOut} of ${car.stats.windowDays} days out`}
+                hint={`${car.stats.daysOut} of ${car.stats.windowDays * car.vehicles.length} car-days`}
               />
               <Stat
                 label="Rentals"
@@ -190,21 +202,29 @@ function CarPage() {
 
           <Panel title="Record" className="lg:self-start">
             <div className="grid gap-3 px-4 py-4">
-              <Field label="Fleet id" value={car.id} mono />
+              <Field label="Listing id" value={car.id} mono />
               <Field
-                label="Right now"
-                value={
-                  car.onRental
-                    ? `With ${car.onRental.clientName} until ${formatDate(car.onRental.returnDate)}`
-                    : car.status === "available"
-                      ? "On the forecourt"
-                      : CAR_STATUS_LABEL[car.status]
+                label="Cars behind it"
+                value={car.vehicles.map((v) => v.label).join(", ")}
+                hint={
+                  car.vehicles.length > 1
+                    ? "New bookings take the car shown on the site first, then a backup."
+                    : undefined
                 }
               />
               <Field
-                label="Off the road since"
-                value={car.offRoadSince ? formatInstant(car.offRoadSince) : null}
-                hint={car.status === "available" ? "It is on the road." : undefined}
+                label="Out right now"
+                value={
+                  car.vehicles
+                    .filter((v) => v.onRentalUntil)
+                    .map((v) => `${v.label} — ${v.onRentalFor}`)
+                    .join(", ") || null
+                }
+                hint={
+                  car.vehicles.some((v) => v.onRentalUntil)
+                    ? undefined
+                    : "Everything is in the yard."
+                }
               />
               <Field label="Last edited" value={formatInstant(car.updatedAt)} />
             </div>
@@ -212,15 +232,34 @@ function CarPage() {
         </div>
       </div>
 
-      {/* ── this car's month ─────────────────────────────────────────────── */}
+      {/* ── the physical cars ────────────────────────────────────────────── */}
       <div className="mt-4">
-        <Panel title="This car's calendar" action={<CarMonthNav car={car} search={search} />}>
-          <TimelineGrid
-            days={car.days}
-            rows={[car.timeline]}
-            today={car.today}
-            showCarColumn={false}
-          />
+        <Panel
+          title="The cars behind this listing"
+          subtitle={
+            car.vehicles.length === 1
+              ? "One car backs this listing. Taking it off the road removes the listing from the booking page."
+              : `${car.vehicles.length} cars back this listing, so it can take that many rentals at once. Bookings are assigned to the car shown on the site first.`
+          }
+        >
+          {car.vehicles.length === 0 ? (
+            <EmptyState>
+              No physical car is assigned to this listing, so it cannot be booked at all.
+            </EmptyState>
+          ) : (
+            <div className="divide-y divide-cw-navy/8">
+              {car.vehicles.map((vehicle) => (
+                <VehicleEditor key={`${vehicle.id}:${vehicle.updatedAt}`} vehicle={vehicle} />
+              ))}
+            </div>
+          )}
+        </Panel>
+      </div>
+
+      {/* ── this listing's month, one row per car ────────────────────────── */}
+      <div className="mt-4">
+        <Panel title="This listing's calendar" action={<CarMonthNav car={car} search={search} />}>
+          <TimelineGrid days={car.days} rows={car.timeline} today={car.today} />
           <TimelineLegend />
         </Panel>
       </div>
@@ -231,22 +270,23 @@ function CarPage() {
           title="Rentals still on the books"
           subtitle={
             car.upcoming.length === 0
-              ? "Nothing outstanding — every rental on this car is finished"
-              : `${car.upcoming.length} ${car.upcoming.length === 1 ? "rental" : "rentals"} not yet returned, including any in progress. These stand whatever the car's status.`
+              ? "Nothing outstanding — every rental on this listing is finished"
+              : `${car.upcoming.length} ${car.upcoming.length === 1 ? "rental" : "rentals"} not yet returned, including any in progress. These stand whatever a car's status.`
           }
         >
           {car.upcoming.length === 0 ? (
             <EmptyState>
-              {car.status === "available"
-                ? "Nothing outstanding. This car is free for any dates."
-                : "Nothing outstanding, so taking it off the road affects no one."}
+              {car.bookable
+                ? "Nothing outstanding. Every car on this listing is free for any dates."
+                : "Nothing outstanding, so taking these cars off the road affects no one."}
             </EmptyState>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[640px] border-collapse">
+              <table className="w-full min-w-[720px] border-collapse">
                 <thead className="border-b border-cw-navy/8">
                   <tr>
                     <Th>Guest</Th>
+                    <Th>Car</Th>
                     <Th>Pickup</Th>
                     <Th>Return</Th>
                     <Th align="right">Total</Th>
@@ -254,42 +294,48 @@ function CarPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-cw-navy/8">
-                  {car.upcoming.map((rental) => (
-                    <tr key={rental.bookingId} className="hover:bg-cw-teal-soft/25">
-                      <Td>
-                        <Link
-                          to="/admin/bookings/$bookingId"
-                          params={{ bookingId: rental.bookingId }}
-                          className="font-semibold text-cw-navy underline-offset-2 hover:text-cw-teal hover:underline"
-                        >
-                          {rental.clientName}
-                        </Link>
-                        {/* The car is physically with this guest — the row an
-                            owner needs to see first when taking it off road. */}
-                        {rental.bookingId === car.onRental?.bookingId && (
-                          <span className="ml-2 rounded-md bg-cw-peach-soft px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.04em] text-[#a3572a]">
-                            Out now
+                  {car.upcoming.map((rental) => {
+                    const outNow = car.vehicles.some(
+                      (v) => v.onRentalBookingId === rental.bookingId,
+                    );
+                    return (
+                      <tr key={rental.bookingId} className="hover:bg-cw-teal-soft/25">
+                        <Td>
+                          <Link
+                            to="/admin/bookings/$bookingId"
+                            params={{ bookingId: rental.bookingId }}
+                            className="font-semibold text-cw-navy underline-offset-2 hover:text-cw-teal hover:underline"
+                          >
+                            {rental.clientName}
+                          </Link>
+                          {/* The car is physically with this guest — the row an
+                              owner needs to see first when taking it off road. */}
+                          {outNow && (
+                            <span className="ml-2 rounded-md bg-cw-peach-soft px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.04em] text-[#a3572a]">
+                              Out now
+                            </span>
+                          )}
+                        </Td>
+                        <Td className="whitespace-nowrap text-cw-ink/70">{rental.vehicleLabel}</Td>
+                        <Td className="whitespace-nowrap text-cw-ink/70">
+                          {formatDateShort(rental.pickupDate)}, {formatTime(rental.pickupTime)}
+                        </Td>
+                        <Td className="whitespace-nowrap text-cw-ink/70">
+                          {formatDateShort(rental.returnDate)}
+                          <span className="text-cw-ink/45"> · {rental.days}d</span>
+                        </Td>
+                        <Td align="right" className="font-semibold text-cw-navy">
+                          {formatMoney(rental.totalCents)}
+                        </Td>
+                        <Td align="right">
+                          <span className="inline-flex gap-1">
+                            <StatusPill value={rental.paymentStatus} title="Payment status" />
+                            <StatusPill value={rental.prepStatus} title="Prep status" />
                           </span>
-                        )}
-                      </Td>
-                      <Td className="whitespace-nowrap text-cw-ink/70">
-                        {formatDateShort(rental.pickupDate)}, {formatTime(rental.pickupTime)}
-                      </Td>
-                      <Td className="whitespace-nowrap text-cw-ink/70">
-                        {formatDateShort(rental.returnDate)}
-                        <span className="text-cw-ink/45"> · {rental.days}d</span>
-                      </Td>
-                      <Td align="right" className="font-semibold text-cw-navy">
-                        {formatMoney(rental.totalCents)}
-                      </Td>
-                      <Td align="right">
-                        <span className="inline-flex gap-1">
-                          <StatusPill value={rental.paymentStatus} title="Payment status" />
-                          <StatusPill value={rental.prepStatus} title="Prep status" />
-                        </span>
-                      </Td>
-                    </tr>
-                  ))}
+                        </Td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -330,14 +376,14 @@ function WindowPicker({
   );
 }
 
-/** Month navigation for this car. Deliberately its own few lines rather than a
- *  generalised version of the bookings page's: the two link to different routes
- *  and summarise different things, and a shared component would take a render
- *  prop for every part that differs. */
+/** Month navigation for this listing. Deliberately its own few lines rather than
+ *  a generalised version of the bookings page's: the two link to different
+ *  routes and summarise different things, and a shared component would take a
+ *  render prop for every part that differs. */
 function CarMonthNav({ car, search }: { car: FleetCarDetail; search: CarSearch }) {
   const linkClass =
     "inline-flex h-[30px] items-center rounded-lg border border-cw-navy/15 bg-white px-2.5 text-[13px] font-semibold text-cw-navy transition-colors hover:border-cw-teal hover:text-cw-teal";
-  const bars = car.timeline.bars.length;
+  const bars = car.timeline.reduce((sum, row) => sum + row.bars.length, 0);
 
   return (
     <div className="flex items-center gap-2">
@@ -379,29 +425,28 @@ function CarMonthNav({ car, search }: { car: FleetCarDetail; search: CarSearch }
   );
 }
 
-/* ── the editor ────────────────────────────────────────────────────────────── */
+/* ── the listing editor ────────────────────────────────────────────────────── */
 
 /**
- * Rates, standing availability, photo and maintenance notes.
+ * Rates, photo and guest-facing copy — the things a LISTING owns.
  *
  * MONEY IS TYPED IN GUILDERS AND STORED IN CENTS. The conversion happens here,
  * once, on submit — nobody types 6000 into a field labelled "rate". A value that
  * does not parse is refused in the form rather than being sent as NaN.
  *
- * The whole form is keyed on the car's updated_at by its parent, so a successful
+ * The form is keyed on the listing's updated_at by its parent, so a successful
  * save (which changes updated_at) remounts it against the freshly loaded row
  * instead of leaving a stale draft in the boxes.
  */
-function CarEditor({ car }: { car: FleetCarDetail }) {
+function ListingEditor({ car }: { car: FleetCarDetail }) {
   const router = useRouter();
 
   const asField = (cents: number) => (cents / 100).toString();
 
   const [rate, setRate] = useState(asField(car.dailyRateCents));
   const [monthlyRate, setMonthlyRate] = useState(asField(car.monthlyRateCents));
-  const [status, setStatus] = useState<CarStatus>(car.status);
   const [photoUrl, setPhotoUrl] = useState(car.photoUrl);
-  const [notes, setNotes] = useState(car.maintenanceNotes ?? "");
+  const [description, setDescription] = useState(car.description ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
@@ -409,15 +454,8 @@ function CarEditor({ car }: { car: FleetCarDetail }) {
   const dirty =
     rate !== asField(car.dailyRateCents) ||
     monthlyRate !== asField(car.monthlyRateCents) ||
-    status !== car.status ||
     photoUrl !== car.photoUrl ||
-    notes.trim() !== (car.maintenanceNotes ?? "").trim();
-
-  const leavingTheRoad = car.status === "available" && status !== "available";
-  const upcoming = car.upcoming.length;
-
-  const inputClass =
-    "w-full rounded-lg border border-cw-navy/15 bg-white px-3 py-2 text-[13px] text-cw-ink outline-none transition-colors focus:border-cw-teal focus:ring-2 focus:ring-cw-teal/20";
+    description.trim() !== (car.description ?? "").trim();
 
   async function save() {
     if (busy) return;
@@ -445,9 +483,8 @@ function CarEditor({ car }: { car: FleetCarDetail }) {
           carId: car.id,
           dailyRateCents: Math.round(guilders * 100),
           monthlyRateCents: Math.round(monthlyGuilders * 100),
-          status,
           photoUrl,
-          maintenanceNotes: notes,
+          description,
         },
       });
       if (!result.ok) {
@@ -455,23 +492,17 @@ function CarEditor({ car }: { car: FleetCarDetail }) {
         return;
       }
       await router.invalidate();
-      setSaved(
-        result.wentOffRoad && result.affectedRentals > 0
-          ? `Saved. ${result.affectedRentals} ${
-              result.affectedRentals === 1 ? "rental is" : "rentals are"
-            } still booked on this car — they have NOT been cancelled.`
-          : "Saved.",
-      );
+      setSaved("Saved.");
     } catch (cause) {
       console.error(cause);
-      setError("Could not save the car. Check the connection and try again.");
+      setError("Could not save the listing. Check the connection and try again.");
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <Panel className="lg:col-span-2" title="Edit this car">
+    <Panel className="lg:col-span-2" title="Edit this listing">
       <div className="grid gap-4 px-4 py-4 sm:grid-cols-2">
         {/* ── the two rates ────────────────────────────────────────────── */}
         <label className="block">
@@ -529,11 +560,13 @@ function CarEditor({ car }: { car: FleetCarDetail }) {
             ? "Both rates apply to new bookings only. A reservation always keeps the price it was quoted."
             : `Both rates apply to new bookings only. The ${car.upcoming.length} ${
                 car.upcoming.length === 1 ? "rental" : "rentals"
-              } already on the books keep the price they were quoted.`}
+              } already on the books keep the price they were quoted.`}{" "}
+          Every car on this listing is rented at these rates — a physical car has no price of its
+          own.
         </p>
 
         {/* ── photo ────────────────────────────────────────────────────── */}
-        <label className="block">
+        <label className="block sm:col-span-2">
           <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-cw-ink/50">
             Photo
           </span>
@@ -553,22 +586,234 @@ function CarEditor({ car }: { car: FleetCarDetail }) {
             />
           </span>
           <span className="mt-1 block text-[11px] text-cw-ink/50">
-            A path under /assets/fleet/ or a full https:// URL. Uploading a new photo needs a
-            storage bucket, which is not set up yet.
+            A path under /assets/fleet/ or a full https:// URL. This is a picture of the car marked
+            &ldquo;on the site&rdquo; below, which is why new bookings are assigned to that one
+            first. Uploading a new photo needs a storage bucket, which is not set up yet.
           </span>
         </label>
 
-        {/* ── standing availability ────────────────────────────────────── */}
+        {/* ── description ──────────────────────────────────────────────── */}
+        <label className="block sm:col-span-2">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-cw-ink/50">
+            Description
+          </span>
+          <textarea
+            value={description}
+            rows={3}
+            maxLength={2000}
+            onChange={(e) => {
+              setDescription(e.target.value);
+              setSaved(null);
+            }}
+            placeholder="How you would describe this car to a guest…"
+            className={`mt-1 resize-y ${inputClass}`}
+          />
+          <span className="mt-1 block text-[11px] text-cw-ink/50">
+            Guest-facing copy for the listing. Stored and public, but the marketing fleet grid still
+            renders from src/content/brand.ts, so nothing on the site reads it yet.
+          </span>
+        </label>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 border-t border-cw-navy/8 px-4 py-3">
+        <Button variant="primary" disabled={busy || !dirty} onClick={save}>
+          {busy ? "Saving…" : "Save listing"}
+        </Button>
+        {dirty && (
+          <Button
+            variant="secondary"
+            disabled={busy}
+            onClick={() => {
+              setRate(asField(car.dailyRateCents));
+              setMonthlyRate(asField(car.monthlyRateCents));
+              setPhotoUrl(car.photoUrl);
+              setDescription(car.description ?? "");
+              setError(null);
+            }}
+          >
+            Discard
+          </Button>
+        )}
+        {error && (
+          <span role="alert" className="text-[12px] font-semibold text-[#b3261e]">
+            {error}
+          </span>
+        )}
+        {saved && !dirty && <span className="text-[12px] text-[#1a7a45]">{saved}</span>}
+      </div>
+    </Panel>
+  );
+}
+
+/* ── the vehicle editor ────────────────────────────────────────────────────── */
+
+/**
+ * One physical car: its condition, its plate, its colour.
+ *
+ * WHY VISIBILITY IS SHOWN BUT NOT EDITABLE. Which unit a listing advertises is
+ * bound to which unit is in the listing's photograph. Flipping a switch here
+ * would leave the site showing a black Spark while quietly handing out the grey
+ * one — so changing it is a photo change too, and stays a deliberate two-part
+ * job rather than a toggle that can be half-done.
+ */
+function VehicleEditor({ vehicle }: { vehicle: FleetVehicleRow }) {
+  const router = useRouter();
+
+  const [status, setStatus] = useState<VehicleStatus>(vehicle.status);
+  const [plate, setPlate] = useState(vehicle.plateNumber ?? "");
+  const [color, setColor] = useState(vehicle.color);
+  const [notes, setNotes] = useState(vehicle.maintenanceNotes ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState<string | null>(null);
+
+  const dirty =
+    status !== vehicle.status ||
+    plate.trim() !== (vehicle.plateNumber ?? "").trim() ||
+    color.trim() !== vehicle.color.trim() ||
+    notes.trim() !== (vehicle.maintenanceNotes ?? "").trim();
+
+  const leavingTheRoad = vehicle.status === "available" && status !== "available";
+
+  async function save() {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    setSaved(null);
+    try {
+      const result = await updateFleetVehicle({
+        data: {
+          vehicleId: vehicle.id,
+          status,
+          plateNumber: plate,
+          color,
+          maintenanceNotes: notes,
+        },
+      });
+      if (!result.ok) {
+        setError(result.message);
+        return;
+      }
+      await router.invalidate();
+      // Three different true things to say, and which one it is matters: a car
+      // off the road with rentals on it needs phone calls, and a listing that
+      // has just left the site needs to be known about immediately.
+      setSaved(
+        !result.listingStillBookable
+          ? "Saved. This was the last car on the road for this listing — it is no longer offered for new bookings."
+          : result.wentOffRoad && result.affectedRentals > 0
+            ? `Saved. ${result.affectedRentals} ${
+                result.affectedRentals === 1 ? "rental is" : "rentals are"
+              } still booked on this car — they have NOT been cancelled.`
+            : result.wentOffRoad
+              ? "Saved. Nothing was booked on this car, and the listing is still bookable on another."
+              : "Saved.",
+      );
+    } catch (cause) {
+      console.error(cause);
+      setError("Could not save the car. Check the connection and try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div id={vehicle.id} className="px-4 py-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="font-display text-[14px] font-extrabold text-cw-navy">
+            {vehicle.label}
+            {vehicle.isPubliclyVisible ? (
+              <span className="ml-2 rounded-md bg-cw-teal-soft px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.04em] text-cw-teal-dark">
+                On the site
+              </span>
+            ) : (
+              <span className="ml-2 rounded-md bg-cw-navy/8 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.04em] text-cw-navy/60">
+                Backup
+              </span>
+            )}
+          </h3>
+          <p className="mt-0.5 text-[11px] text-cw-ink/50">
+            {vehicle.isPubliclyVisible
+              ? "The car in the listing's photo. New bookings are assigned to it whenever it is free."
+              : "Not shown publicly. Assigned only when the advertised car is already booked for those dates."}
+          </p>
+        </div>
+
+        <div className="text-right text-[12px] text-cw-ink/60">
+          {vehicle.onRentalUntil ? (
+            <span className="font-semibold text-[#a3572a]">
+              With {vehicle.onRentalFor} until {formatDate(vehicle.onRentalUntil)}
+            </span>
+          ) : vehicle.nextPickupDate ? (
+            <>
+              Next out {formatDateShort(vehicle.nextPickupDate)} · {vehicle.nextPickupFor}
+            </>
+          ) : (
+            <span className="text-cw-ink/40">In the yard, nothing booked</span>
+          )}
+          <span className="block text-[11px] text-cw-ink/45">
+            {vehicle.stats.utilisationPct}% used · {formatMoney(vehicle.stats.collectedCents)}{" "}
+            collected · {vehicle.upcomingCount} on the books
+          </span>
+          {vehicle.offRoadSince && (
+            <span className="block text-[11px] text-cw-ink/45">
+              Off the road since {formatInstant(vehicle.offRoadSince)}
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <label className="block">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-cw-ink/50">
+            Plate
+          </span>
+          <input
+            value={plate}
+            maxLength={20}
+            onChange={(e) => {
+              setPlate(e.target.value);
+              setSaved(null);
+            }}
+            placeholder="Not on file"
+            className={`mt-1 ${inputClass}`}
+          />
+          <span className="mt-1 block text-[11px] text-cw-ink/50">
+            {vehicle.plateNumber === null
+              ? "Never recorded for this car. Adding it is how the CRM can name the exact vehicle at handover."
+              : "Two cars cannot share a plate — the database refuses it."}
+          </span>
+        </label>
+
+        <label className="block">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-cw-ink/50">
+            Colour
+          </span>
+          <input
+            value={color}
+            maxLength={40}
+            onChange={(e) => {
+              setColor(e.target.value);
+              setSaved(null);
+            }}
+            className={`mt-1 ${inputClass}`}
+          />
+          <span className="mt-1 block text-[11px] text-cw-ink/50">
+            This car&rsquo;s actual colour. The listing has its own, which is what the photo shows.
+          </span>
+        </label>
+
         <div className="sm:col-span-2">
           <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-cw-ink/50">
             Standing availability
           </span>
           <p className="mt-0.5 text-[11px] text-cw-ink/50">
-            The car&rsquo;s own state, not a booking&rsquo;s. A rental&rsquo;s prep status lives on
+            This car&rsquo;s own state, not a booking&rsquo;s. A rental&rsquo;s prep status lives on
             the booking.
           </p>
           <div className="mt-2 grid gap-2 sm:grid-cols-3">
-            {CAR_STATUS_ORDER.map((option) => (
+            {VEHICLE_STATUS_ORDER.map((option) => (
               <button
                 key={option}
                 type="button"
@@ -584,10 +829,10 @@ function CarEditor({ car }: { car: FleetCarDetail }) {
                 }`}
               >
                 <span className="block text-[13px] font-semibold text-cw-navy">
-                  {CAR_STATUS_LABEL[option]}
+                  {VEHICLE_STATUS_LABEL[option]}
                 </span>
                 <span className="mt-0.5 block text-[11px] leading-snug text-cw-ink/55">
-                  {CAR_STATUS_MEANING[option]}
+                  {VEHICLE_STATUS_MEANING[option]}
                 </span>
               </button>
             ))}
@@ -597,30 +842,30 @@ function CarEditor({ car }: { car: FleetCarDetail }) {
               edit on the page that can strand a guest. */}
           {leavingTheRoad && (
             <p className="mt-2 rounded-lg bg-cw-yellow-soft px-3 py-2 text-[12px] text-[#8a6a04]">
-              {upcoming === 0 ? (
+              {vehicle.upcomingCount === 0 ? (
                 <>Nothing is booked on this car, so taking it off the road affects no one.</>
               ) : (
                 <>
                   <span className="font-semibold">
-                    {upcoming} {upcoming === 1 ? "rental is" : "rentals are"} already booked on this
-                    car.
+                    {vehicle.upcomingCount}{" "}
+                    {vehicle.upcomingCount === 1 ? "rental is" : "rentals are"} already booked on
+                    this car.
                   </span>{" "}
-                  Taking it off the road stops NEW bookings only — those rentals stand, and each one
-                  needs moving to another car or calling off by hand.
+                  Taking it off the road stops NEW assignments only — those rentals stand, and each
+                  one needs moving to another car or calling off by hand.
                 </>
               )}
             </p>
           )}
         </div>
 
-        {/* ── maintenance notes ────────────────────────────────────────── */}
         <label className="block sm:col-span-2">
           <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-cw-ink/50">
             Maintenance notes
           </span>
           <textarea
             value={notes}
-            rows={4}
+            rows={3}
             maxLength={5000}
             onChange={(e) => {
               setNotes(e.target.value);
@@ -630,25 +875,25 @@ function CarEditor({ car }: { car: FleetCarDetail }) {
             className={`mt-1 resize-y ${inputClass}`}
           />
           <span className="mt-1 block text-[11px] text-cw-ink/50">
-            Staff only. The public site cannot read this column at all.
+            Staff only. The public site cannot read this table at all.
           </span>
         </label>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 border-t border-cw-navy/8 px-4 py-3">
-        <Button variant="primary" disabled={busy || !dirty} onClick={save}>
-          {busy ? "Saving…" : "Save changes"}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Button variant="primary" size="sm" disabled={busy || !dirty} onClick={save}>
+          {busy ? "Saving…" : "Save car"}
         </Button>
         {dirty && (
           <Button
             variant="secondary"
+            size="sm"
             disabled={busy}
             onClick={() => {
-              setRate(asField(car.dailyRateCents));
-              setMonthlyRate(asField(car.monthlyRateCents));
-              setStatus(car.status);
-              setPhotoUrl(car.photoUrl);
-              setNotes(car.maintenanceNotes ?? "");
+              setStatus(vehicle.status);
+              setPlate(vehicle.plateNumber ?? "");
+              setColor(vehicle.color);
+              setNotes(vehicle.maintenanceNotes ?? "");
               setError(null);
             }}
           >
@@ -662,6 +907,6 @@ function CarEditor({ car }: { car: FleetCarDetail }) {
         )}
         {saved && !dirty && <span className="text-[12px] text-[#1a7a45]">{saved}</span>}
       </div>
-    </Panel>
+    </div>
   );
 }

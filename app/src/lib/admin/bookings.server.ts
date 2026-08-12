@@ -4,10 +4,19 @@
  * requireAdmin() (src/lib/api/admin.functions.ts).
  *
  * WHAT THIS MODULE IS RESPONSIBLE FOR
- *   the timeline   every booking touching one month, as bars per car
+ *   the timeline   every booking touching one month, as bars per VEHICLE
  *   the list       the same bookings, filtered, for when a grid is the slow way
  *   the detail     one booking in full, including internal notes
- *   the writes     prep_status moves and admin_notes edits
+ *   the writes     prep_status moves, admin_notes edits, and bookings taken by
+ *                  hand at the counter or over the phone
+ *
+ * A BOOKING NOW NAMES TWO CARS, and the difference matters on every screen
+ * below: `car_id` is the LISTING that was sold and priced, `vehicle_id` is the
+ * physical car whose keys the guest gets. Filters and grouping that answer
+ * "what did we sell" work on the listing; anything an operator acts on in the
+ * yard works on the vehicle. The timeline draws one row per VEHICLE, because a
+ * listing backed by two cars can have two rentals running at once and stacking
+ * them in one row would look exactly like a double booking.
  *
  * THREE THINGS THAT ARE EASY TO GET WRONG HERE
  *
@@ -34,16 +43,24 @@
  *    edits a row from SQL or a future phase adds another write path.
  */
 import { supabaseAdmin } from "../supabase/admin.server";
-import { rentalDays } from "../booking/rental";
+import {
+  PICKUP_TIME,
+  RETURN_TIME,
+  quoteRental,
+  rentalDays,
+  resolveWindow,
+  type RentalType,
+} from "../booking/rental";
 import type {
   BookingStatus,
-  CarStatus,
   PaymentStatus,
   PrepStatus,
   RentalTypeValue,
   Transmission,
+  VehicleStatus,
 } from "../supabase/types";
 import { PREP_FLOW } from "./prep";
+import { vehicleLabel } from "./fleet";
 import { addDays, curacaoNow, isMonthKey, monthKeyOf } from "./clock";
 import { monthGrid, packLanes, toBars, type RentalForBar } from "./timeline";
 import type {
@@ -53,9 +70,27 @@ import type {
   BookingsBoardData,
   BookingsListData,
   BookingWriteResult,
+  ManualBookingListing,
+  ManualBookingOptions,
+  ManualBookingResult,
   TimelineBar,
   TimelineRow,
 } from "./types";
+
+/** Cancelled rentals hold nothing: the exclusion constraint's partial WHERE, in
+ *  the one word this file uses for it. */
+const CANCELLED = "cancelled";
+
+/** Postgres exclusion_violation — the double-booking guard firing, now on
+ *  vehicle_id. */
+const EXCLUSION_VIOLATION = "23P01";
+
+const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** How many guests the manual booking picker offers. CW's directory is in the
+ *  hundreds; the form also takes a new guest, so this is a convenience list and
+ *  not a paging problem to solve. */
+const CLIENT_PICKER_LIMIT = 500;
 
 /** How many rows the list view fetches. The exact match count comes from
  *  PostgREST's `count: 'exact'`, so the headline number stays right even when
@@ -72,31 +107,41 @@ const LIST_LIMIT = 500;
 const MAX_RENTAL_DAYS = 400;
 
 const BOARD_SELECT = `
-  id, car_id, pickup_date, pickup_time, return_date, return_time,
+  id, car_id, vehicle_id, pickup_date, pickup_time, return_date, return_time,
   total_price, booking_status, payment_status, prep_status,
   clients ( full_name )
 `;
 
 const LIST_SELECT = `
-  id, car_id, pickup_date, pickup_time, return_date, return_time,
+  id, car_id, vehicle_id, pickup_date, pickup_time, return_date, return_time,
   pickup_location, return_location, total_price,
   booking_status, payment_status, prep_status, created_at,
   cars ( id, model, color ),
+  vehicles ( id, color, plate_number, is_publicly_visible ),
   clients ( full_name, email, phone )
 `;
 
 const DETAIL_SELECT = `
   *,
   cars ( * ),
+  vehicles ( * ),
   clients ( * )
 `;
 
-/** "Hyundai Venue · Red" — the fleet has two Versas, so the colour is not
- *  decoration, it is how an admin tells the cars apart. Same label as the
- *  dashboard builds; both read from `cars`, so they always agree. */
+/** "Hyundai Venue · Red" — the LISTING. The fleet has two Versas, so the colour
+ *  is not decoration, it is how an admin tells the listings apart. Same label as
+ *  the dashboard and the fleet page build; all three read from `cars`, so they
+ *  always agree. */
 function carLabel(car: { model: string; color: string } | null): string {
   if (!car) return "Unknown car";
   return `${car.model} · ${car.color}`;
+}
+
+/** "Grey · P-4821" — the PHYSICAL car. Falls back rather than throwing: a join
+ *  that came back empty is a display problem, not a reason to fail the page. */
+function unitLabel(vehicle: { color: string; plate_number: string | null } | null): string {
+  if (!vehicle) return "Unassigned";
+  return vehicleLabel(vehicle);
 }
 
 function zeroPrepCounts(): Record<PrepStatus, number> {
@@ -108,6 +153,7 @@ function zeroPrepCounts(): Record<PrepStatus, number> {
 interface RawListRow {
   id: string;
   car_id: string;
+  vehicle_id: string;
   pickup_date: string;
   pickup_time: string;
   return_date: string;
@@ -120,6 +166,12 @@ interface RawListRow {
   prep_status: PrepStatus;
   created_at: string;
   cars: { id: string; model: string; color: string } | null;
+  vehicles: {
+    id: string;
+    color: string;
+    plate_number: string | null;
+    is_publicly_visible: boolean;
+  } | null;
   clients: { full_name: string; email: string; phone: string } | null;
 }
 
@@ -132,6 +184,9 @@ function toBookingRow(raw: RawListRow): BookingRow {
     clientPhone: raw.clients?.phone ?? "",
     carId: raw.car_id,
     carLabel: carLabel(raw.cars),
+    vehicleId: raw.vehicle_id,
+    vehicleLabel: unitLabel(raw.vehicles),
+    vehicleIsPubliclyVisible: raw.vehicles?.is_publicly_visible ?? true,
     pickupDate: raw.pickup_date,
     pickupTime: raw.pickup_time,
     returnDate: raw.return_date,
@@ -151,6 +206,7 @@ function toBookingRow(raw: RawListRow): BookingRow {
 interface RawBoardRow {
   id: string;
   car_id: string;
+  vehicle_id: string;
   pickup_date: string;
   pickup_time: string;
   return_date: string;
@@ -166,7 +222,7 @@ interface RawBoardRow {
 function toRentalForBar(raw: RawBoardRow): RentalForBar {
   return {
     id: raw.id,
-    carId: raw.car_id,
+    vehicleId: raw.vehicle_id,
     clientName: raw.clients?.full_name ?? "Unknown guest",
     pickupDate: raw.pickup_date,
     returnDate: raw.return_date,
@@ -182,7 +238,13 @@ function toRentalForBar(raw: RawBoardRow): RentalForBar {
 /* ── the timeline ──────────────────────────────────────────────────────────── */
 
 /**
- * Every booking touching `month`, as bars in one row per car.
+ * Every booking touching `month`, as bars in one row per PHYSICAL CAR.
+ *
+ * ONE ROW PER VEHICLE, NOT PER LISTING. Two Sparks rented over the same week is
+ * a good week, not a conflict, and a single Spark row would draw it as two
+ * stacked lanes — the same shape this calendar uses to signal a cancellation
+ * overlapping its replacement. Rows are labelled with the listing and the unit
+ * so the pair reads as two cars of one model rather than as two models.
  *
  * CANCELLED BOOKINGS ARE DRAWN, not filtered out. The car is free — a cancelled
  * row sits outside the exclusion constraint's partial WHERE — but "there was a
@@ -201,8 +263,14 @@ export async function getBookingsBoard(month?: string | null): Promise<BookingsB
   const grid = monthGrid(isMonthKey(month) ? month : currentMonth);
 
   const db = supabaseAdmin();
-  const [carsRes, bookingsRes] = await Promise.all([
-    db.from("cars").select("id, model, color, status").order("daily_rate", { ascending: false }),
+  const [carsRes, vehiclesRes, bookingsRes] = await Promise.all([
+    db
+      .from("cars")
+      .select("id, model, color, daily_rate")
+      .order("daily_rate", { ascending: false }),
+    db
+      .from("vehicles")
+      .select("id, listing_id, color, plate_number, status, is_publicly_visible, created_at"),
     db
       .from("bookings")
       .select(BOARD_SELECT)
@@ -215,7 +283,9 @@ export async function getBookingsBoard(month?: string | null): Promise<BookingsB
   ]);
 
   if (carsRes.error)
-    throw new Error(`Bookings board: failed to load cars: ${carsRes.error.message}`);
+    throw new Error(`Bookings board: failed to load listings: ${carsRes.error.message}`);
+  if (vehiclesRes.error)
+    throw new Error(`Bookings board: failed to load vehicles: ${vehiclesRes.error.message}`);
   if (bookingsRes.error) {
     throw new Error(`Bookings board: failed to load bookings: ${bookingsRes.error.message}`);
   }
@@ -224,7 +294,17 @@ export async function getBookingsBoard(month?: string | null): Promise<BookingsB
     id: string;
     model: string;
     color: string;
-    status: CarStatus;
+    daily_rate: number;
+  }[];
+
+  const vehicles = (vehiclesRes.data ?? []) as {
+    id: string;
+    listing_id: string;
+    color: string;
+    plate_number: string | null;
+    status: VehicleStatus;
+    is_publicly_visible: boolean;
+    created_at: string;
   }[];
 
   const raw = (bookingsRes.data ?? []) as unknown as RawBoardRow[];
@@ -234,25 +314,48 @@ export async function getBookingsBoard(month?: string | null): Promise<BookingsB
   // function, which is what keeps one bar from being drawn two ways.
   const bars = toBars(raw.map(toRentalForBar), grid);
 
-  const barsByCar = new Map<string, TimelineBar[]>();
+  const barsByVehicle = new Map<string, TimelineBar[]>();
   const prepCounts = zeroPrepCounts();
 
   for (const bar of bars) {
     prepCounts[bar.prepStatus]++;
-    const list = barsByCar.get(bar.carId);
+    const list = barsByVehicle.get(bar.vehicleId);
     if (list) list.push(bar);
-    else barsByCar.set(bar.carId, [bar]);
+    else barsByVehicle.set(bar.vehicleId, [bar]);
   }
   const visibleCount = bars.length;
 
-  const rows: TimelineRow[] = cars.map((car) => {
-    const { bars, lanes } = packLanes(barsByCar.get(car.id) ?? []);
-    return { carId: car.id, carLabel: carLabel(car), carStatus: car.status, lanes, bars };
-  });
+  // Rows follow the listing order (rate, high to low) and then assignment order
+  // within a listing, so the visible unit sits directly above its backup and the
+  // pair reads as one product.
+  const listingRank = new Map(cars.map((c, i) => [c.id, i]));
+  const listingById = new Map(cars.map((c) => [c.id, c]));
 
-  // A booking against a car that is no longer in `cars` cannot happen — car_id
-  // is a foreign key with ON DELETE RESTRICT — so there is deliberately no
-  // "orphaned bars" row to render here.
+  const rows: TimelineRow[] = [...vehicles]
+    .sort((a, b) => {
+      const rank = (listingRank.get(a.listing_id) ?? 0) - (listingRank.get(b.listing_id) ?? 0);
+      if (rank !== 0) return rank;
+      if (a.is_publicly_visible !== b.is_publicly_visible) return a.is_publicly_visible ? -1 : 1;
+      return a.created_at < b.created_at ? -1 : 1;
+    })
+    .map((vehicle) => {
+      const { bars, lanes } = packLanes(barsByVehicle.get(vehicle.id) ?? []);
+      const listing = listingById.get(vehicle.listing_id) ?? null;
+      return {
+        vehicleId: vehicle.id,
+        listingId: vehicle.listing_id,
+        listingLabel: carLabel(listing),
+        vehicleLabel: vehicleLabel(vehicle),
+        status: vehicle.status,
+        isPubliclyVisible: vehicle.is_publicly_visible,
+        lanes,
+        bars,
+      };
+    });
+
+  // A booking against a vehicle that is no longer in `vehicles` cannot happen —
+  // vehicle_id is a foreign key with ON DELETE RESTRICT — so there is
+  // deliberately no "orphaned bars" row to render here.
 
   return {
     month: grid.month,
@@ -331,6 +434,7 @@ interface RawDetailRow {
   id: string;
   client_id: string;
   car_id: string;
+  vehicle_id: string;
   pickup_date: string;
   pickup_time: string;
   return_date: string;
@@ -357,9 +461,16 @@ interface RawDetailRow {
     category: string;
     transmission: Transmission;
     seats: number;
-    status: CarStatus;
     daily_rate: number;
     monthly_rate: number;
+  } | null;
+  vehicles: {
+    id: string;
+    color: string;
+    plate_number: string | null;
+    is_publicly_visible: boolean;
+    status: VehicleStatus;
+    maintenance_notes: string | null;
   } | null;
   clients: {
     id: string;
@@ -376,6 +487,7 @@ interface RawDetailRow {
 function toBookingDetail(raw: RawDetailRow): BookingDetail {
   const days = rentalDays(raw.pickup_date, raw.return_date);
   const car = raw.cars;
+  const vehicle = raw.vehicles;
   const client = raw.clients;
 
   return {
@@ -399,9 +511,17 @@ function toBookingDetail(raw: RawDetailRow): BookingDetail {
       category: car?.category ?? "—",
       transmission: car?.transmission ?? "Automatic",
       seats: car?.seats ?? 0,
-      status: car?.status ?? "available",
       dailyRateCents: car?.daily_rate ?? 0,
       monthlyRateCents: car?.monthly_rate ?? 0,
+    },
+    vehicle: {
+      id: vehicle?.id ?? raw.vehicle_id,
+      label: unitLabel(vehicle),
+      color: vehicle?.color ?? "—",
+      plateNumber: vehicle?.plate_number ?? null,
+      isPubliclyVisible: vehicle?.is_publicly_visible ?? true,
+      status: vehicle?.status ?? "available",
+      maintenanceNotes: vehicle?.maintenance_notes ?? null,
     },
     pickupDate: raw.pickup_date,
     pickupTime: raw.pickup_time,
@@ -554,4 +674,371 @@ export async function setBookingAdminNotes(input: {
   if (!data) return NOT_FOUND;
 
   return { ok: true, booking: toBookingDetail(data as unknown as RawDetailRow) };
+}
+
+/* ── taking a booking by hand ──────────────────────────────────────────────── */
+
+/**
+ * What the manual booking screen needs, in one round trip.
+ *
+ * WHY THIS EXISTS SEPARATELY FROM THE PUBLIC AVAILABILITY QUERY. The public one
+ * answers "which LISTINGS can I offer?" and deliberately hides everything about
+ * the cars behind them. This one answers "which CAR shall I give this guest?",
+ * which is the opposite: it names every unit, including the ones the site never
+ * shows, and says why each is or is not pickable. The two must not be collapsed
+ * into one function with a flag — the whole point of the hidden unit is that one
+ * of these callers can see it and the other cannot.
+ *
+ * With no dates supplied, every vehicle comes back with `availability: null`.
+ * That is "not asked yet", and the form renders it as such rather than implying
+ * a free car it has not checked.
+ */
+export async function getManualBookingOptions(input: {
+  pickupDate?: string | null;
+  returnDate?: string | null;
+}): Promise<ManualBookingOptions> {
+  const now = curacaoNow();
+  const db = supabaseAdmin();
+
+  // Only a well-formed, ordered window gets an availability answer. A half-typed
+  // date must not produce "everything is taken".
+  const hasWindow =
+    !!input.pickupDate &&
+    !!input.returnDate &&
+    DATE_KEY_RE.test(input.pickupDate) &&
+    DATE_KEY_RE.test(input.returnDate) &&
+    input.returnDate > input.pickupDate;
+
+  const [carsRes, vehiclesRes, clientsRes, rentalsRes, overlapRes] = await Promise.all([
+    db
+      .from("cars")
+      .select("id, model, color, category, daily_rate, monthly_rate")
+      .order("daily_rate", { ascending: false }),
+    db
+      .from("vehicles")
+      .select("id, listing_id, color, plate_number, is_publicly_visible, status, created_at"),
+    db
+      .from("clients")
+      .select("id, full_name, email, phone")
+      .order("full_name", { ascending: true })
+      .limit(CLIENT_PICKER_LIMIT),
+    db.from("bookings").select("client_id").neq("booking_status", CANCELLED),
+    hasWindow
+      ? db
+          .from("bookings")
+          .select("vehicle_id, return_date, clients ( full_name )")
+          .neq("booking_status", CANCELLED)
+          // The same half-open overlap the exclusion constraint applies, on the
+          // same generated columns — so what this screen shows as free is what
+          // the insert will actually accept, give or take the seconds between.
+          .lt("pickup_at", `${input.returnDate}T${RETURN_TIME}`)
+          .gt("return_at", `${input.pickupDate}T${PICKUP_TIME}`)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+
+  for (const [label, res] of [
+    ["listings", carsRes],
+    ["vehicles", vehiclesRes],
+    ["clients", clientsRes],
+    ["client history", rentalsRes],
+    ["overlapping rentals", overlapRes],
+  ] as const) {
+    if (res.error) throw new Error(`Manual booking: failed to load ${label}: ${res.error.message}`);
+  }
+
+  const cars = (carsRes.data ?? []) as {
+    id: string;
+    model: string;
+    color: string;
+    category: string;
+    daily_rate: number;
+    monthly_rate: number;
+  }[];
+
+  const vehicles = (vehiclesRes.data ?? []) as {
+    id: string;
+    listing_id: string;
+    color: string;
+    plate_number: string | null;
+    is_publicly_visible: boolean;
+    status: VehicleStatus;
+    created_at: string;
+  }[];
+
+  const overlapping = (overlapRes.data ?? []) as unknown as {
+    vehicle_id: string;
+    return_date: string;
+    clients: { full_name: string } | null;
+  }[];
+  const takenBy = new Map(overlapping.map((b) => [b.vehicle_id, b]));
+
+  const rentalCounts = new Map<string, number>();
+  for (const row of (rentalsRes.data ?? []) as { client_id: string }[]) {
+    rentalCounts.set(row.client_id, (rentalCounts.get(row.client_id) ?? 0) + 1);
+  }
+
+  const listings: ManualBookingListing[] = cars.map((car) => ({
+    id: car.id,
+    label: `${car.model} · ${car.color}`,
+    category: car.category,
+    dailyRateCents: car.daily_rate,
+    monthlyRateCents: car.monthly_rate,
+    vehicles: vehicles
+      .filter((v) => v.listing_id === car.id)
+      .sort((a, b) => {
+        if (a.is_publicly_visible !== b.is_publicly_visible) return a.is_publicly_visible ? -1 : 1;
+        return a.created_at < b.created_at ? -1 : 1;
+      })
+      .map((v) => {
+        const held = takenBy.get(v.id);
+        return {
+          id: v.id,
+          listingId: v.listing_id,
+          label: vehicleLabel(v),
+          color: v.color,
+          plateNumber: v.plate_number,
+          isPubliclyVisible: v.is_publicly_visible,
+          status: v.status,
+          // Off the road beats taken: a car in the shop is not merely busy, and
+          // an operator reading "already out" would go looking for it.
+          availability: !hasWindow
+            ? null
+            : v.status !== "available"
+              ? ("off_road" as const)
+              : held
+                ? ("taken" as const)
+                : ("free" as const),
+          takenBy: held?.clients?.full_name ?? null,
+          takenUntil: held?.return_date ?? null,
+        };
+      }),
+  }));
+
+  return {
+    today: now.today,
+    pickupDate: hasWindow ? (input.pickupDate ?? null) : null,
+    returnDate: hasWindow ? (input.returnDate ?? null) : null,
+    listings,
+    clients: (
+      (clientsRes.data ?? []) as {
+        id: string;
+        full_name: string;
+        email: string;
+        phone: string;
+      }[]
+    ).map((c) => ({
+      id: c.id,
+      fullName: c.full_name,
+      email: c.email,
+      phone: c.phone,
+      rentals: rentalCounts.get(c.id) ?? 0,
+    })),
+  };
+}
+
+export interface ManualBookingInput {
+  /** An existing guest, or null to create one from `guest`. */
+  clientId: string | null;
+  guest: { fullName: string; email: string; phone: string } | null;
+  /** The PHYSICAL car, named by the operator. Its listing is derived, never
+   *  taken from the form — see below. */
+  vehicleId: string;
+  rentalType: RentalType;
+  pickupDate: string;
+  /** Ignored for a monthly rental, whose period is derived. */
+  returnDate: string | null;
+  pickupLocation: string;
+  returnLocation: string;
+  flightNumber: string | null;
+  specialRequests: string | null;
+  adminNotes: string | null;
+  bookingStatus: Extract<BookingStatus, "pending" | "confirmed">;
+  paymentStatus: PaymentStatus;
+  /** The admin taking it, for the record. */
+  handledBy: string | null;
+}
+
+/**
+ * Take a booking by hand: a phone call, a walk-in, or a deliberate choice of the
+ * backup unit.
+ *
+ * WHAT MAKES THIS DIFFERENT FROM THE PUBLIC PATH, and it is one thing: the
+ * vehicle is NAMED rather than assigned. Everything else is deliberately
+ * identical, and identical for the same reasons:
+ *
+ *   THE PRICE still comes from quoteRental() with rates read here from the
+ *   database. An operator cannot type a total any more than a guest can. If a
+ *   deal needs a different number, it is recorded as what it is — a payment
+ *   against the booking — rather than by quietly restating the price list.
+ *
+ *   THE WINDOW of a monthly rental is still derived, so a manual monthly booking
+ *   occupies the same 30 days it is priced for.
+ *
+ *   THE EXCLUSION CONSTRAINT is still the authority on whether the car is free.
+ *   There is no retry loop here, and that absence is the feature: the operator
+ *   picked THIS car, so a clash is reported to them rather than silently
+ *   resolved by moving the guest to a different one.
+ *
+ * The listing is read from the vehicle rather than accepted alongside it. The
+ * composite FK would reject a mismatched pair anyway; deriving it means the form
+ * cannot construct the pair in the first place.
+ */
+export async function createManualBooking(input: ManualBookingInput): Promise<ManualBookingResult> {
+  const db = supabaseAdmin();
+  const window = resolveWindow(input.rentalType, input.pickupDate, input.returnDate);
+
+  if (!DATE_KEY_RE.test(window.pickupDate) || !DATE_KEY_RE.test(window.returnDate)) {
+    return { ok: false, reason: "invalid", message: "Enter both dates as YYYY-MM-DD." };
+  }
+  if (window.returnDate <= window.pickupDate) {
+    return { ok: false, reason: "invalid", message: "The return date must be after the pickup." };
+  }
+
+  // 1. The car, and through it the listing that carries the price.
+  const { data: vehicle, error: vehicleError } = await db
+    .from("vehicles")
+    .select("id, listing_id, color, plate_number, status, cars ( daily_rate, monthly_rate )")
+    .eq("id", input.vehicleId)
+    .maybeSingle();
+
+  if (vehicleError)
+    throw new Error(`Manual booking: failed to load the car: ${vehicleError.message}`);
+  if (!vehicle) {
+    return { ok: false, reason: "not_found", message: "That car is not in the fleet." };
+  }
+
+  const listing = vehicle.cars as unknown as { daily_rate: number; monthly_rate: number } | null;
+  if (!listing) {
+    return { ok: false, reason: "not_found", message: "That car has no listing to price against." };
+  }
+
+  // An off-road car is refused rather than quietly allowed. Assigning a rental
+  // to a car that is in the shop is either a mistake or a decision to put it
+  // back on the road, and the second one has its own button on the fleet page.
+  if (vehicle.status !== "available") {
+    return {
+      ok: false,
+      reason: "vehicle_off_road",
+      message:
+        "That car is off the road. Put it back on the road on the fleet page first, or pick another car.",
+    };
+  }
+
+  // 2. THE price — same function, same rules, same refusals as the public flow.
+  const priced = quoteRental({
+    rentalType: input.rentalType,
+    rates: { dailyRateCents: listing.daily_rate, monthlyRateCents: listing.monthly_rate },
+    pickupDate: window.pickupDate,
+    returnDate: window.returnDate,
+  });
+  if (!priced.ok) {
+    return { ok: false, reason: priced.reason, message: priced.message };
+  }
+  const quote = priced.quote;
+
+  // 3. The guest: an existing record, or a new one.
+  const clientId = await resolveClient(input);
+  if (!clientId.ok) return clientId.error;
+
+  // 4. The booking, against the car the operator named.
+  const { data: booking, error } = await db
+    .from("bookings")
+    .insert({
+      client_id: clientId.id,
+      car_id: vehicle.listing_id,
+      vehicle_id: vehicle.id,
+      pickup_date: window.pickupDate,
+      pickup_time: PICKUP_TIME,
+      return_date: window.returnDate,
+      return_time: RETURN_TIME,
+      pickup_location: input.pickupLocation,
+      return_location: input.returnLocation,
+      flight_number: input.flightNumber?.trim() || null,
+      total_price: quote.totalCents,
+      rental_type: quote.rentalType,
+      discount_pct: quote.discountPct,
+      discount_cents: quote.discountCents,
+      booking_status: input.bookingStatus,
+      payment_status: input.paymentStatus,
+      special_requests: input.specialRequests?.trim() || null,
+      admin_notes: input.adminNotes?.trim() || null,
+      handled_by: input.handledBy?.trim() || null,
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    if (error.code === EXCLUSION_VIOLATION) {
+      return {
+        ok: false,
+        reason: "date_conflict",
+        message: `${vehicleLabel(vehicle)} is already booked over those dates. Pick another car or change the dates.`,
+      };
+    }
+    throw new Error(`Manual booking: failed to save: ${error.message}`);
+  }
+
+  return {
+    ok: true,
+    bookingId: booking.id,
+    ref: booking.id.slice(0, 8),
+    vehicleLabel: vehicleLabel(vehicle),
+  };
+}
+
+/**
+ * The guest a manual booking is for.
+ *
+ * An existing id is used as-is and NEVER updated from the form: a phone booking
+ * is not the moment to overwrite a record with whatever was heard down a bad
+ * line. Corrections are the client page's job.
+ *
+ * A new guest is inserted with the email lowercased, matching the public path,
+ * so the two cannot produce records that fail to match each other later.
+ */
+async function resolveClient(
+  input: ManualBookingInput,
+): Promise<{ ok: true; id: string } | { ok: false; error: ManualBookingResult }> {
+  const db = supabaseAdmin();
+
+  if (input.clientId) {
+    const { data, error } = await db
+      .from("clients")
+      .select("id")
+      .eq("id", input.clientId)
+      .maybeSingle();
+    if (error) throw new Error(`Manual booking: failed to load the guest: ${error.message}`);
+    if (!data) {
+      return {
+        ok: false,
+        error: { ok: false, reason: "not_found", message: "That guest record no longer exists." },
+      };
+    }
+    return { ok: true, id: data.id };
+  }
+
+  const guest = input.guest;
+  if (!guest || guest.fullName.trim() === "" || guest.email.trim() === "") {
+    return {
+      ok: false,
+      error: {
+        ok: false,
+        reason: "invalid",
+        message: "Pick an existing guest, or enter a name, email and phone for a new one.",
+      },
+    };
+  }
+
+  const { data, error } = await db
+    .from("clients")
+    .insert({
+      full_name: guest.fullName.trim(),
+      email: guest.email.trim().toLowerCase(),
+      phone: guest.phone.trim(),
+    })
+    .select("id")
+    .single();
+
+  if (error) throw new Error(`Manual booking: failed to save the guest: ${error.message}`);
+  return { ok: true, id: data.id };
 }

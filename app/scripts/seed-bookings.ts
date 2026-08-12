@@ -117,7 +117,24 @@ interface Fixture {
      */
     email?: string;
   };
+  /** The LISTING, by FLEET slug. */
   carId: string;
+  /**
+   * WHICH PHYSICAL CAR under that listing, since migration 0005 split the two.
+   *
+   *   "visible"  the unit shown on the site — what the booking flow assigns
+   *              first, and the right default for almost every fixture.
+   *   "backup"   a unit the public site does not show. Only the Spark has one
+   *              today; a fixture asking for a backup on a single-car listing
+   *              fails the run rather than silently landing on the visible one,
+   *              because a fixture that quietly changes car is a fixture that
+   *              stops testing what it was written to test.
+   *
+   * The pair of Spark fixtures below uses this to build the case the whole split
+   * exists for: two overlapping rentals on one listing, which the old
+   * listing-level exclusion constraint would have rejected outright.
+   */
+  unit?: "visible" | "backup";
   /** Defaults to 'daily'. A monthly fixture ignores `returnOffset` — the period
    *  is derived, exactly as the booking flow derives it. */
   rentalType?: RentalType;
@@ -625,6 +642,28 @@ const FIXTURES: Fixture[] = [
   },
   {
     exercises:
+      "POOLING: overlaps the Spark rental above, on the SECOND physical Spark. The old listing-level exclusion constraint would have rejected this outright; the vehicle-level one must accept it. On screen it has to read as two cars working, never as a double booking",
+    guest: {
+      name: "Ruben Statia",
+      phone: "+599 9 514 8802",
+      licenseNumber: "CW-338914",
+      licenseExpiryDays: 480,
+      country: "Curaçao",
+    },
+    carId: "chevrolet-spark-black",
+    unit: "backup",
+    pickupOffset: 8,
+    returnOffset: 13,
+    pickupLocation: PUNDA,
+    returnLocation: AIRPORT,
+    bookingStatus: "confirmed",
+    paymentStatus: "unpaid",
+    prepStatus: "needs_prep",
+    adminNotes:
+      "Grey Spark, not the black one in the photos. Tell him at handover so he is not looking for a black car.",
+  },
+  {
+    exercises:
       "TIER 2: 14 days, so 10% comes off. Total must be less than 14 x the daily rate everywhere it is shown",
     guest: {
       name: "Hannah Lindqvist",
@@ -643,7 +682,8 @@ const FIXTURES: Fixture[] = [
     paymentStatus: "paid",
     prepStatus: "booked",
     specialRequests: "Two weeks, mostly diving. Roof space for tanks would help.",
-    adminNotes: "Two week discount applied automatically at booking. Do not discount again by hand.",
+    adminNotes:
+      "Two week discount applied automatically at booking. Do not discount again by hand.",
   },
   {
     exercises:
@@ -703,13 +743,44 @@ function fixtureEmail(name: string): string {
   return `${slug}${FIXTURE_DOMAIN}`;
 }
 
-async function loadCars() {
-  const { data, error } = await db
-    .from("cars")
-    .select("id, model, color, daily_rate, monthly_rate, status");
+/**
+ * The fleet at both levels: listings (which carry the rates) and the physical
+ * cars behind them (which carry the bookings).
+ *
+ * Vehicles are sorted the way the booking flow assigns them — visible first,
+ * then oldest — so `vehicles[0]` here is the car a real booking would have been
+ * given, and a fixture that does not say otherwise lands on the same one.
+ */
+async function loadFleet() {
+  const [{ data: cars, error }, { data: vehicles, error: vehiclesError }] = await Promise.all([
+    db.from("cars").select("id, model, color, daily_rate, monthly_rate"),
+    db
+      .from("vehicles")
+      .select("id, listing_id, color, plate_number, is_publicly_visible, status, created_at"),
+  ]);
+
   if (error) fail(`Could not read the fleet: ${error.message}`);
-  if (!data || data.length === 0) fail("No cars in the database — run the migrations first.");
-  return new Map(data.map((c) => [c.id, c]));
+  if (vehiclesError) fail(`Could not read the vehicles: ${vehiclesError.message}`);
+  if (!cars || cars.length === 0) fail("No cars in the database — run the migrations first.");
+  if (!vehicles || vehicles.length === 0) {
+    fail("No vehicles in the database — migration 0005 has not been applied.");
+  }
+
+  return new Map(
+    (cars ?? []).map((c) => [
+      c.id,
+      {
+        ...c,
+        vehicles: (vehicles ?? [])
+          .filter((v) => v.listing_id === c.id)
+          .sort((a, b) => {
+            if (a.is_publicly_visible !== b.is_publicly_visible)
+              return a.is_publicly_visible ? -1 : 1;
+            return a.created_at < b.created_at ? -1 : 1;
+          }),
+      },
+    ]),
+  );
 }
 
 async function findFixtureClientIds(): Promise<string[]> {
@@ -774,7 +845,7 @@ async function clear(quiet = false): Promise<{ bookings: number; clients: number
 }
 
 async function seed() {
-  const cars = await loadCars();
+  const cars = await loadFleet();
 
   // Re-runnable: drop the previous fixture set first so the exclusion constraint
   // does not reject the same dates on a second run.
@@ -794,7 +865,22 @@ async function seed() {
 
   for (const fixture of FIXTURES) {
     const car = cars.get(fixture.carId);
-    if (!car) fail(`Fixture references an unknown car: ${fixture.carId}`);
+    if (!car) fail(`Fixture references an unknown listing: ${fixture.carId}`);
+
+    // The physical car. A fixture asking for a backup unit on a listing that has
+    // none is a mistake in this file — falling back to the visible one would
+    // silently turn a pooling test into an ordinary booking.
+    const wantBackup = fixture.unit === "backup";
+    const vehicle = wantBackup
+      ? car.vehicles.find((v) => !v.is_publicly_visible)
+      : car.vehicles.find((v) => v.is_publicly_visible);
+
+    if (!vehicle) {
+      fail(
+        `Fixture for ${fixture.guest.name} wants the ${wantBackup ? "backup" : "publicly visible"} ` +
+          `car on ${fixture.carId}, which has none.`,
+      );
+    }
 
     const rentalType = fixture.rentalType ?? "daily";
     const pickupDate = day(fixture.pickupOffset);
@@ -865,6 +951,7 @@ async function seed() {
       .insert({
         client_id: clientId,
         car_id: fixture.carId,
+        vehicle_id: vehicle.id,
         pickup_date: pickupDate,
         pickup_time: fixture.pickupTime ?? "10:00:00",
         return_date: returnDate,
@@ -890,7 +977,8 @@ async function seed() {
       // overlap on one car, which is a bug in this file, not in the app.
       const hint =
         bookingError.code === "23P01"
-          ? "\n    Two fixtures collide on the same car — adjust the offsets in this script."
+          ? "\n    Two fixtures collide on the same PHYSICAL car — adjust the offsets, or put " +
+            "one of them on `unit: 'backup'` if the listing has a second car."
           : "";
       fail(`Could not create booking for ${fixture.guest.name}: ${bookingError.message}${hint}`);
     }

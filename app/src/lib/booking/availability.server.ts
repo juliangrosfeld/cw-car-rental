@@ -22,17 +22,34 @@
  *
  * WHY THE OVERLAP CHECK HERE IS NOT THE SAFETY NET
  * `findAvailableCars` is a READ, so it is check-then-act: two requests can both
- * see a car as free. The actual guarantee is the `bookings_no_double_booking`
- * exclusion constraint in Postgres, which fails the losing INSERT with SQLSTATE
- * 23P01. This module surfaces that as a typed `date_conflict` result rather
- * than a 500. Never "fix" a conflict by pre-checking harder — the constraint is
- * the thing that actually holds.
+ * see a car as free. The actual guarantee is the
+ * `bookings_no_double_booking_vehicle` exclusion constraint in Postgres, which
+ * fails the losing INSERT with SQLSTATE 23P01. This module surfaces that as a
+ * typed `date_conflict` result rather than a 500. Never "fix" a conflict by
+ * pre-checking harder — the constraint is the thing that actually holds.
+ *
+ * LISTINGS vs VEHICLES (migration 0005) — the distinction this whole module now
+ * turns on:
+ *
+ *   A guest books a LISTING ("the Chevrolet Spark"). Availability is therefore
+ *   asked at the listing level: free if ANY vehicle under it has the dates
+ *   open. Hidden backup units count — they are capacity, not a separate
+ *   product, and excluding them would hide a car that is genuinely free.
+ *
+ *   A booking holds a VEHICLE. The exclusion constraint keys on vehicle_id, so
+ *   two guests CAN hold the Spark listing over the same week when there are two
+ *   Sparks, and CANNOT ever hold the same physical car.
+ *
+ *   Assignment happens at write time, visible unit first — see
+ *   `assignVehicle` below for why that preference is not cosmetic and how the
+ *   loop stays safe under a race.
  */
 import { supabaseAdmin } from "../supabase/admin.server";
-import type { Booking, Car, Client } from "../supabase/types";
+import type { Booking, Car, Client, NewBooking, Vehicle } from "../supabase/types";
 import {
   PICKUP_TIME,
   RETURN_TIME,
+  addDaysToKey,
   quoteRental,
   rentalDays,
   resolveWindow,
@@ -74,68 +91,186 @@ export function assertValidWindow(w: RentalWindow): void {
   }
 }
 
-/** Every car that is on the road and not committed elsewhere for this window.
- *  The Supabase replacement for the old D1 `findAvailableCars`. */
-export async function findAvailableCars(window: RentalWindow): Promise<Car[]> {
-  assertValidWindow(window);
-  const db = supabaseAdmin();
+/* ── the fleet, as capacity ─────────────────────────────────────────────────
+ *
+ * Everything below reasons over VEHICLES and answers about LISTINGS. The shape
+ * that makes that readable is one query for the vehicles that are on the road
+ * and one for the bookings that hold them, joined in memory: the fleet is six
+ * rows, and a PostgREST join would still have to be regrouped here anyway.
+ */
 
-  const [{ data: cars, error: carsError }, { data: taken, error: takenError }] =
-    await Promise.all([
-      db.from("cars").select("*").eq("status", "available").order("daily_rate", { ascending: false }),
-      // Half-open overlap: existing.pickup < new.return AND existing.return > new.pickup.
-      // Compares the generated pickup_at / return_at columns, so this is index-backed
-      // and identical to what the exclusion constraint tests.
-      db
-        .from("bookings")
-        .select("car_id")
-        .neq("booking_status", OCCUPYING)
-        .lt("pickup_at", toTimestamp(window.returnDate, RETURN_TIME))
-        .gt("return_at", toTimestamp(window.pickupDate, PICKUP_TIME)),
-    ]);
+/** A vehicle as availability cares about it: whose listing, and is it the one
+ *  in the photo. Ordered by ASSIGNMENT PREFERENCE wherever it appears as a
+ *  list — see orderByPreference. */
+type CandidateVehicle = Pick<
+  Vehicle,
+  "id" | "listing_id" | "is_publicly_visible" | "color" | "plate_number" | "created_at"
+>;
 
-  if (carsError) throw new Error(`Failed to load cars: ${carsError.message}`);
-  if (takenError) throw new Error(`Failed to load bookings: ${takenError.message}`);
+const CANDIDATE_SELECT = "id, listing_id, is_publicly_visible, color, plate_number, created_at";
 
-  const takenIds = new Set((taken ?? []).map((b) => b.car_id));
-  return (cars ?? []).filter((c) => !takenIds.has(c.id));
+/**
+ * The order vehicles are handed out in.
+ *
+ * VISIBLE FIRST, and this is not cosmetic: the listing's photo is of that
+ * specific car, so a guest who booked from a picture of a black Spark should be
+ * given the black Spark whenever it is free. A backup goes out only when the
+ * advertised one is already spoken for — which is the whole reason it exists.
+ *
+ * `created_at` then `id` break the tie deterministically. Determinism matters
+ * more than which one wins: two servers assigning from the same free set must
+ * pick the same car, or they race each other into an exclusion violation that
+ * neither needed to hit.
+ */
+function orderByPreference(a: CandidateVehicle, b: CandidateVehicle): number {
+  if (a.is_publicly_visible !== b.is_publicly_visible) return a.is_publicly_visible ? -1 : 1;
+  if (a.created_at !== b.created_at) return a.created_at < b.created_at ? -1 : 1;
+  return a.id < b.id ? -1 : 1;
 }
 
-/** Every bookable car, regardless of dates — the fleet the calendar reasons over. */
-export async function listBookableCars(): Promise<Car[]> {
+/** Every vehicle on the road, in assignment order. Off-road units are absent
+ *  entirely: a car in the shop is not capacity. */
+async function loadRoadworthyVehicles(listingId?: string): Promise<CandidateVehicle[]> {
+  let query = supabaseAdmin().from("vehicles").select(CANDIDATE_SELECT).eq("status", "available");
+  if (listingId) query = query.eq("listing_id", listingId);
+
+  const { data, error } = await query;
+  if (error) throw new Error(`Failed to load vehicles: ${error.message}`);
+  return ((data ?? []) as CandidateVehicle[]).sort(orderByPreference);
+}
+
+/** Vehicle ids holding a booking that overlaps this window. Half-open overlap:
+ *  existing.pickup < new.return AND existing.return > new.pickup — the same
+ *  test the exclusion constraint applies, against the same generated columns,
+ *  so this read and that write can only disagree by timing. */
+async function vehiclesTakenIn(window: RentalWindow): Promise<Set<string>> {
   const { data, error } = await supabaseAdmin()
-    .from("cars")
-    .select("*")
-    .eq("status", "available")
-    .order("daily_rate", { ascending: false });
-  if (error) throw new Error(`Failed to load cars: ${error.message}`);
-  return data ?? [];
+    .from("bookings")
+    .select("vehicle_id")
+    .neq("booking_status", OCCUPYING)
+    .lt("pickup_at", toTimestamp(window.returnDate, RETURN_TIME))
+    .gt("return_at", toTimestamp(window.pickupDate, PICKUP_TIME));
+
+  if (error) throw new Error(`Failed to load bookings: ${error.message}`);
+  return new Set((data ?? []).map((b) => b.vehicle_id));
 }
 
 /**
- * Occupied date ranges from today to `horizonDate`, for painting the calendar.
+ * Every LISTING with at least one vehicle free for this window.
  *
- * Returns only car_id + the two dates: no guest names, no prices, no notes.
- * This payload is serialised straight to the browser, so it must never carry a
- * field the anon role is not allowed to read.
+ * A listing backed by two cars stays on this list while either is free, which
+ * is the behaviour the whole split exists for: booking the visible Spark must
+ * not take the Spark listing off the site while a second Spark sits idle.
  */
-export async function findBusyRanges(
-  fromDate: string,
-  horizonDate: string,
-): Promise<BusyRange[]> {
-  const { data, error } = await supabaseAdmin()
-    .from("bookings")
-    .select("car_id, pickup_date, return_date")
-    .neq("booking_status", OCCUPYING)
-    .gte("return_date", fromDate)
-    .lte("pickup_date", horizonDate);
+export async function findAvailableCars(window: RentalWindow): Promise<Car[]> {
+  assertValidWindow(window);
+
+  const [{ data: cars, error: carsError }, vehicles, taken] = await Promise.all([
+    supabaseAdmin().from("cars").select("*").order("daily_rate", { ascending: false }),
+    loadRoadworthyVehicles(),
+    vehiclesTakenIn(window),
+  ]);
+
+  if (carsError) throw new Error(`Failed to load cars: ${carsError.message}`);
+
+  const freeListings = new Set(vehicles.filter((v) => !taken.has(v.id)).map((v) => v.listing_id));
+  return (cars ?? []).filter((c) => freeListings.has(c.id));
+}
+
+/** Every listing with a car on the road, regardless of dates — the fleet the
+ *  calendar reasons over. A listing whose only vehicle is in the shop is absent,
+ *  exactly as a car at 'maintenance' used to be. */
+export async function listBookableCars(): Promise<Car[]> {
+  const [{ data, error }, vehicles] = await Promise.all([
+    supabaseAdmin().from("cars").select("*").order("daily_rate", { ascending: false }),
+    loadRoadworthyVehicles(),
+  ]);
+  if (error) throw new Error(`Failed to load cars: ${error.message}`);
+
+  const backed = new Set(vehicles.map((v) => v.listing_id));
+  return (data ?? []).filter((c) => backed.has(c.id));
+}
+
+/**
+ * Dates a LISTING cannot be booked on at all, from today to `horizonDate`, for
+ * painting the calendar.
+ *
+ * WHY THIS IS COMPUTED HERE AND NOT SENT AS RAW BOOKINGS. Before 0005 a busy
+ * range was simply a booking: one car, one row, and the browser could test
+ * overlap directly. With pooled units that is no longer true — the Spark is
+ * unavailable only on days when BOTH Sparks are out — so the arithmetic moves
+ * server-side and what goes to the browser is the answer rather than the
+ * ingredients.
+ *
+ * That is also the privacy-preserving shape. The payload says "this listing
+ * cannot be booked these days" and nothing else: not how many cars back it, not
+ * which one is out, not that a hidden unit exists at all. A per-vehicle payload
+ * would have leaked the fleet's real size to anyone reading the network tab.
+ *
+ * Ranges are half-open [pickupDate, returnDate) to match the day model in
+ * ./rental, so the client-side helpers (carFreeForRange, dayFullyBooked) work
+ * on them unchanged.
+ */
+export async function findBusyRanges(fromDate: string, horizonDate: string): Promise<BusyRange[]> {
+  const [vehicles, { data: bookings, error }] = await Promise.all([
+    loadRoadworthyVehicles(),
+    supabaseAdmin()
+      .from("bookings")
+      .select("vehicle_id, pickup_date, return_date")
+      .neq("booking_status", OCCUPYING)
+      .gte("return_date", fromDate)
+      .lte("pickup_date", horizonDate),
+  ]);
 
   if (error) throw new Error(`Failed to load bookings: ${error.message}`);
-  return (data ?? []).map((b) => ({
-    carId: b.car_id,
-    pickupDate: b.pickup_date,
-    returnDate: b.return_date,
-  }));
+
+  const occupiedByVehicle = new Map<string, { from: string; to: string }[]>();
+  for (const b of bookings ?? []) {
+    const list = occupiedByVehicle.get(b.vehicle_id);
+    const span = { from: b.pickup_date, to: b.return_date };
+    if (list) list.push(span);
+    else occupiedByVehicle.set(b.vehicle_id, [span]);
+  }
+
+  const byListing = new Map<string, CandidateVehicle[]>();
+  for (const v of vehicles) {
+    const list = byListing.get(v.listing_id);
+    if (list) list.push(v);
+    else byListing.set(v.listing_id, [v]);
+  }
+
+  // Day granular, like the calendar it feeds. A day is occupied for a vehicle
+  // when pickup <= day < return — the return day is free, since the car is back
+  // that morning.
+  const vehicleBusyOn = (vehicleId: string, day: string): boolean =>
+    (occupiedByVehicle.get(vehicleId) ?? []).some((s) => s.from <= day && day < s.to);
+
+  const ranges: BusyRange[] = [];
+
+  for (const [listingId, units] of byListing) {
+    let runStart: string | null = null;
+
+    // One day past the horizon, so a run that reaches the end is still closed
+    // off with an exclusive upper bound rather than being dropped.
+    for (let day = fromDate; day <= horizonDate; day = addDaysToKey(day, 1)) {
+      const full = units.every((v) => vehicleBusyOn(v.id, day));
+
+      if (full && runStart === null) runStart = day;
+      if (!full && runStart !== null) {
+        ranges.push({ carId: listingId, pickupDate: runStart, returnDate: day });
+        runStart = null;
+      }
+    }
+    if (runStart !== null) {
+      ranges.push({
+        carId: listingId,
+        pickupDate: runStart,
+        returnDate: addDaysToKey(horizonDate, 1),
+      });
+    }
+  }
+
+  return ranges;
 }
 
 /**
@@ -241,17 +376,57 @@ export type CreateBookingResult =
 const EXCLUSION_VIOLATION = "23P01";
 
 /**
+ * Insert a booking against the first vehicle that will actually take it.
+ *
+ * THIS LOOP IS THE RACE-SAFETY MECHANISM, and it is deliberately built on the
+ * write rather than on a better read. `candidates` comes from a check-then-act
+ * query, so between reading and writing another request can take any of them.
+ * Rather than trying to close that window — which is impossible without a lock
+ * the rest of this app does not take — each candidate is simply ATTEMPTED, and
+ * a 23P01 from the exclusion constraint is treated as "someone got that one,
+ * try the next key on the hook".
+ *
+ * So two simultaneous requests for a two-Spark listing cannot both be given the
+ * black Spark: one insert wins, the loser's constraint violation moves it to the
+ * grey one, and both guests end up with a car. Three simultaneous requests and
+ * the third runs out of candidates and is told the truth.
+ *
+ * Any other error is rethrown untouched — a null column or a bad foreign key is
+ * a bug, not a busy car, and must not be reported to a guest as "already taken".
+ */
+async function insertWithAssignment(
+  candidates: CandidateVehicle[],
+  row: Omit<NewBooking, "vehicle_id">,
+): Promise<{ booking: Booking; vehicle: CandidateVehicle } | null> {
+  const db = supabaseAdmin();
+
+  for (const vehicle of candidates) {
+    const { data, error } = await db
+      .from("bookings")
+      .insert({ ...row, vehicle_id: vehicle.id })
+      .select()
+      .single();
+
+    if (!error) return { booking: data, vehicle };
+    if (error.code !== EXCLUSION_VIOLATION) {
+      throw new Error(`Failed to create booking: ${error.message}`);
+    }
+  }
+
+  return null;
+}
+
+/**
  * The one write path for bookings.
  *
- * Order matters: the car is read FIRST so the price comes from the database,
- * then the client row is created, then the booking. If the exclusion constraint
- * rejects the insert we return a typed conflict — the client row is left behind
- * deliberately, since a guest who retries with different dates should not have
- * to re-enter their details, and an orphan client row is harmless.
+ * Order matters: the listing is read FIRST so the price comes from the
+ * database, then the client row is created, then the booking. If every vehicle
+ * under the listing is taken we return a typed conflict — the client row is
+ * left behind deliberately, since a guest who retries with different dates
+ * should not have to re-enter their details, and an orphan client row is
+ * harmless.
  */
-export async function createBooking(
-  input: CreateBookingInput,
-): Promise<CreateBookingResult> {
+export async function createBooking(input: CreateBookingInput): Promise<CreateBookingResult> {
   // The window a monthly rental occupies is DERIVED, not accepted: the guest
   // picks a start day and the period is fixed at MONTHLY_PERIOD_DAYS. Doing this
   // before anything else means the dates that are validated, the dates that are
@@ -261,6 +436,8 @@ export async function createBooking(
   const db = supabaseAdmin();
 
   // 1. Authoritative price source. Nothing the browser sent is trusted here.
+  //    The LISTING carries the rates; whether anything is actually bookable is
+  //    a separate question, answered by its vehicles below.
   const { data: car, error: carError } = await db
     .from("cars")
     .select("*")
@@ -268,7 +445,18 @@ export async function createBooking(
     .maybeSingle();
 
   if (carError) throw new Error(`Failed to load car: ${carError.message}`);
-  if (!car || car.status !== "available") {
+  if (!car) {
+    return {
+      ok: false,
+      reason: "car_not_bookable",
+      message: "That car is not available to book right now.",
+    };
+  }
+
+  // Every roadworthy unit under this listing, best first. Empty means the whole
+  // listing is off the road — the replacement for the old `status` check.
+  const fleet = await loadRoadworthyVehicles(car.id);
+  if (fleet.length === 0) {
     return {
       ok: false,
       reason: "car_not_bookable",
@@ -297,39 +485,40 @@ export async function createBooking(
     phone: input.phone,
   });
 
-  // 3. The booking. booking_status/payment_status stay at their opening values —
-  //    payment is not integrated yet, so claiming anything else would be a lie.
-  const { data: booking, error: bookingError } = await db
-    .from("bookings")
-    .insert({
-      client_id: client.id,
-      car_id: car.id,
-      pickup_date: window.pickupDate,
-      pickup_time: PICKUP_TIME,
-      return_date: window.returnDate,
-      return_time: RETURN_TIME,
-      pickup_location: input.pickupLocation,
-      return_location: input.returnLocation,
-      flight_number: input.flightNumber?.trim() || null,
-      total_price: quote.totalCents,
-      rental_type: quote.rentalType,
-      discount_pct: quote.discountPct,
-      discount_cents: quote.discountCents,
-      special_requests: input.specialRequests?.trim() || null,
-    })
-    .select()
-    .single();
+  // 3. The booking, against a specific physical car. Which one is decided here
+  //    and NOT shown to the guest: they booked a Spark, they are getting a
+  //    Spark, and which of the two is an operational detail the CRM cares about.
+  //
+  //    booking_status/payment_status stay at their opening values — payment is
+  //    not integrated yet, so claiming anything else would be a lie.
+  const taken = await vehiclesTakenIn(window);
+  const candidates = fleet.filter((v) => !taken.has(v.id));
 
-  if (bookingError) {
-    if (bookingError.code === EXCLUSION_VIOLATION) {
-      return {
-        ok: false,
-        reason: "date_conflict",
-        message: "Someone just booked that car for those dates. Please pick another ride.",
-      };
-    }
-    throw new Error(`Failed to create booking: ${bookingError.message}`);
+  const assigned = await insertWithAssignment(candidates, {
+    client_id: client.id,
+    car_id: car.id,
+    pickup_date: window.pickupDate,
+    pickup_time: PICKUP_TIME,
+    return_date: window.returnDate,
+    return_time: RETURN_TIME,
+    pickup_location: input.pickupLocation,
+    return_location: input.returnLocation,
+    flight_number: input.flightNumber?.trim() || null,
+    total_price: quote.totalCents,
+    rental_type: quote.rentalType,
+    discount_pct: quote.discountPct,
+    discount_cents: quote.discountCents,
+    special_requests: input.specialRequests?.trim() || null,
+  });
+
+  if (!assigned) {
+    return {
+      ok: false,
+      reason: "date_conflict",
+      message: "Someone just booked that car for those dates. Please pick another ride.",
+    };
   }
+  const booking = assigned.booking;
 
   // 4. Read back through the admin client and shape the confirmation. The anon
   //    role cannot SELECT bookings at all, so this is the only way the guest

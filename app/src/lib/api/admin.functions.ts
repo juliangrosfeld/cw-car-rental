@@ -25,14 +25,16 @@ import {
 } from "../auth/admin.server";
 import { getDashboardData } from "../admin/dashboard.server";
 import {
+  createManualBooking,
   getBookingDetail,
   getBookingsBoard,
   getBookingsList,
+  getManualBookingOptions,
   setBookingAdminNotes,
   setBookingPrepStatus,
 } from "../admin/bookings.server";
 import { getClientDetail, getClientsList } from "../admin/clients.server";
-import { getFleetCar, getFleetOverview, updateCar } from "../admin/fleet.server";
+import { getFleetCar, getFleetOverview, updateCar, updateVehicle } from "../admin/fleet.server";
 import {
   getBookingLedger,
   getPaymentsOverview,
@@ -42,7 +44,8 @@ import {
 import { PAYMENT_METHODS } from "../admin/payments";
 import { STATS_WINDOWS, type StatsWindow } from "../admin/fleet";
 import { PREP_FLOW } from "../admin/prep";
-import { CAR_STATUS } from "../supabase/types";
+import { RENTAL_TYPES } from "../booking/rental";
+import { PAYMENT_STATUS, VEHICLE_STATUS } from "../supabase/types";
 import type { BookingFilters, ClientFilter, PaymentsFilter } from "../admin/types";
 
 const credentialsSchema = z.object({
@@ -321,23 +324,24 @@ export const fetchAdminFleetCar = createServerFn({ method: "GET" })
   });
 
 /**
- * Edit a car: rates, standing availability, photo, maintenance notes.
+ * Edit a LISTING: rates, photo, guest-facing copy.
  *
  * Both rates arrive in CENTS — the form converts from the guilders an owner
  * types, and every money value in this app is an integer of cents by the time it
  * crosses a boundary. Returns a discriminated result so a bad rate renders in
- * the form instead of throwing, and so the page can report how many existing
- * rentals a car that just left the road still has.
+ * the form instead of throwing.
+ *
+ * Standing availability is NOT here any more. It belongs to a physical car, and
+ * a listing backed by two of them has two answers — see updateFleetVehicle.
  */
 export const updateFleetCar = createServerFn({ method: "POST" })
   .inputValidator(
     z.object({
       carId: z.string().min(1).max(64),
       dailyRateCents: z.number().int().min(0),
-      // 0 is meaningful, not missing: it takes the car off the monthly product
-      // while leaving its daily availability alone.
+      // 0 is meaningful, not missing: it takes the listing off the monthly
+      // product while leaving its daily availability alone.
       monthlyRateCents: z.number().int().min(0),
-      status: z.enum(CAR_STATUS),
       // Either a path served by this app or an absolute https URL. Kept narrow
       // deliberately: this string is rendered as an <img src> on the public site,
       // so `javascript:` and friends must never reach it.
@@ -349,10 +353,123 @@ export const updateFleetCar = createServerFn({ method: "POST" })
         .refine((v) => v.startsWith("/") || v.startsWith("https://"), {
           message: "Use a path like /assets/fleet/… or a full https:// URL.",
         }),
-      maintenanceNotes: z.string().max(5000, "Notes are limited to 5000 characters."),
+      description: z.string().max(2000, "The description is limited to 2000 characters."),
     }),
   )
   .handler(async ({ data }) => {
     await requireAdmin();
     return updateCar(data);
+  });
+
+/**
+ * Edit a VEHICLE: its condition, its plate, its colour.
+ *
+ * This is the endpoint that can take a car off the road, which is why its result
+ * carries both how many rentals are still booked on it AND whether its listing
+ * survived — with a second car behind it, nothing a guest can see has changed.
+ */
+export const updateFleetVehicle = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      vehicleId: z.uuid(),
+      status: z.enum(VEHICLE_STATUS),
+      // Bounded and free-form: Curaçao plates do not fit one pattern worth
+      // enforcing here, and a rejected legitimate plate is worse than a typo an
+      // owner can see and fix. Empty means "not on file".
+      plateNumber: z.string().trim().max(20, "A plate is at most 20 characters."),
+      color: z.string().trim().min(1, "A car needs a colour.").max(40),
+      maintenanceNotes: z.string().max(5000, "Notes are limited to 5000 characters."),
+    }),
+  )
+  .handler(async ({ data }) => {
+    await requireAdmin();
+    return updateVehicle(data);
+  });
+
+/* ── manual bookings ───────────────────────────────────────────────────────── */
+
+/**
+ * Everything the manual booking screen needs: the fleet down to the individual
+ * car, the guest directory, and — once dates are supplied — which cars are
+ * actually free over them.
+ *
+ * The dates are optional and nullable on purpose: the form loads before anyone
+ * has typed one, and "not asked yet" must not render as "nothing is free".
+ */
+export const fetchManualBookingOptions = createServerFn({ method: "GET" })
+  .inputValidator(
+    z.object({
+      pickupDate: dateKeySchema.nullish(),
+      returnDate: dateKeySchema.nullish(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const admin = await requireAdmin();
+    return {
+      admin,
+      options: await getManualBookingOptions({
+        pickupDate: data.pickupDate ?? null,
+        returnDate: data.returnDate ?? null,
+      }),
+    };
+  });
+
+/**
+ * Take a booking by hand, against a NAMED physical car.
+ *
+ * NOTE what is absent, exactly as on the public endpoint: no price, no day
+ * count, no discount. An operator at the counter is subject to the same price
+ * list as the website — see createManualBooking for why that is deliberate and
+ * what to do when a deal genuinely differs.
+ *
+ * `handledBy` is not accepted from the form either. It is the signed-in admin,
+ * taken from the session below, so the record of who took a booking cannot be
+ * typed by whoever is filling it in.
+ */
+export const createBookingManually = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      clientId: z.uuid().nullish(),
+      guest: z
+        .object({
+          fullName: z.string().trim().min(1, "We need a name for the reservation."),
+          email: z.string().trim().email("That email does not look complete."),
+          phone: z.string().trim().min(5, "A phone or WhatsApp number helps us meet them."),
+        })
+        .nullish(),
+      vehicleId: z.uuid(),
+      rentalType: z.enum(RENTAL_TYPES),
+      pickupDate: dateKeySchema,
+      returnDate: dateKeySchema.nullish(),
+      pickupLocation: z.string().trim().min(1, "Where are they collecting?").max(200),
+      returnLocation: z.string().trim().min(1, "Where are they returning it?").max(200),
+      flightNumber: z.string().trim().max(20).nullish(),
+      specialRequests: z.string().max(2000).nullish(),
+      adminNotes: z.string().max(5000).nullish(),
+      // A booking taken over the phone is normally already agreed, so the form
+      // defaults to confirmed — but 'pending' stays available for a hold that is
+      // not yet firm. Nothing further along the pipeline can be set from here:
+      // 'active' and 'completed' are things that happen, not things you declare.
+      bookingStatus: z.enum(["pending", "confirmed"]).default("confirmed"),
+      paymentStatus: z.enum(PAYMENT_STATUS).default("unpaid"),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const admin = await requireAdmin();
+    return createManualBooking({
+      clientId: data.clientId ?? null,
+      guest: data.guest ?? null,
+      vehicleId: data.vehicleId,
+      rentalType: data.rentalType,
+      pickupDate: data.pickupDate,
+      returnDate: data.returnDate ?? null,
+      pickupLocation: data.pickupLocation,
+      returnLocation: data.returnLocation,
+      flightNumber: data.flightNumber ?? null,
+      specialRequests: data.specialRequests ?? null,
+      adminNotes: data.adminNotes ?? null,
+      bookingStatus: data.bookingStatus,
+      paymentStatus: data.paymentStatus,
+      handledBy: admin.email,
+    });
   });

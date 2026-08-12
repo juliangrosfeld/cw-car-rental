@@ -123,7 +123,9 @@ export function barGeometry(
  */
 export interface RentalForBar {
   id: string;
-  carId: string;
+  /** The PHYSICAL car — bars are grouped into rows by vehicle, not by listing,
+   *  because two vehicles under one listing can legitimately be out at once. */
+  vehicleId: string;
   clientName: string;
   pickupDate: string;
   returnDate: string;
@@ -154,7 +156,7 @@ export function toBars(rentals: readonly RentalForBar[], grid: MonthGrid): Timel
       bookingId: rental.id,
       ref: rental.id.slice(0, 8),
       clientName: rental.clientName,
-      carId: rental.carId,
+      vehicleId: rental.vehicleId,
       pickupDate: rental.pickupDate,
       returnDate: rental.returnDate,
       pickupTime: rental.pickupTime,
@@ -173,7 +175,7 @@ export function toBars(rentals: readonly RentalForBar[], grid: MonthGrid): Timel
 }
 
 /**
- * Assign every bar in one car's row to a lane, so no two bars in a lane
+ * Assign every bar in one vehicle's row to a lane, so no two bars in a lane
  * overlap. Greedy first-fit over bars sorted by start column, which is optimal
  * for interval graphs — it uses exactly as many lanes as the busiest instant
  * needs, and that is one for every row on a normal month.
