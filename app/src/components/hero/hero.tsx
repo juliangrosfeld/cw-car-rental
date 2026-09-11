@@ -104,30 +104,33 @@ export default function Hero() {
       {/* 3. Scrim. The footage is bright — sunlit scrub and turquoise reef — so
              legibility is bought here, not with text shadows alone:
              a navy wash overall, a deep foot under the copy, and a top band so
-             the transparent nav's white marks hold over the water. */}
+             the transparent nav's white marks hold over the water.
+
+             The foot was lightened (0.54/0.9 -> 0.46/0.80) when the left-hand
+             wash came out: with nothing else greying the frame it read as a
+             band rather than a fade. Measured against the loop's brightest
+             frames, the copy still clears 11:1 — the floor for white-on-video
+             here is 4.5:1, so the headroom is spent on the reef, not on text.
+
+             The TOP band is deliberately untouched. The nav's worst case is
+             3.9:1, already under AA for its size, and that is the bright water
+             behind it rather than the scrim: lightening the band costs another
+             0.1 and buys nothing visible. If the nav is ever fixed properly it
+             wants a solid backdrop, not a deeper wash here. */}
       <div aria-hidden="true" className="absolute inset-0 bg-cw-navy/12" />
       <div
         aria-hidden="true"
         className="absolute inset-0"
         style={{
           background:
-            'linear-gradient(180deg, rgba(2,48,71,0.55) 0%, rgba(2,48,71,0.14) 20%, rgba(2,48,71,0) 38%, rgba(2,48,71,0.54) 72%, rgba(2,48,71,0.9) 100%)',
+            'linear-gradient(180deg, rgba(2,48,71,0.55) 0%, rgba(2,48,71,0.14) 20%, rgba(2,48,71,0) 40%, rgba(2,48,71,0.46) 74%, rgba(2,48,71,0.8) 100%)',
         }}
       />
-      {/* A gentle pull from the left anchors the copy column on wide screens.
-          Kept shallow on purpose: the reef in the left of frame is the best
-          thing in the shot, and a heavier wash turns it grey. */}
-      <div
-        aria-hidden="true"
-        className="absolute inset-0 hidden md:block"
-        style={{
-          background:
-            'linear-gradient(90deg, rgba(2,48,71,0.5) 0%, rgba(2,48,71,0.14) 34%, rgba(2,48,71,0) 62%)',
-        }}
-      />
-
-      {/* 4. Copy. */}
-      <div className="relative z-10 mx-auto w-full max-w-[1160px] px-5 pb-[9dvh] pt-32 md:px-8 md:pb-[14dvh]">
+      {/* 4. Copy. Centred, and deliberately low in the frame: the drone tracks
+             the car, which therefore sits near the middle of the shot for the
+             whole loop (measured: x 49-55%, y 39-56% of frame). Bottom-anchoring
+             is what keeps centred copy off it — see the padding below. */}
+      <div className="relative z-10 mx-auto w-full max-w-[1160px] px-5 pb-[4dvh] pt-32 text-center md:px-8 md:pb-[6dvh]">
         <motion.div
           initial={reducedMotion ? false : { opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
@@ -136,13 +139,13 @@ export default function Hero() {
           <p className="font-display text-lg font-bold text-cw-yellow [text-shadow:0_1px_12px_rgba(2,48,71,0.5)]">
             Bon bini!
           </p>
-          <h1 className="mt-3 max-w-[16ch] font-display text-[clamp(2.6rem,4.6vw,4.2rem)] font-extrabold leading-[1.02] tracking-tight text-white [text-shadow:0_2px_24px_rgba(2,48,71,0.5)]">
+          <h1 className="mx-auto mt-3 max-w-[16ch] font-display text-[clamp(2.6rem,4.6vw,4.2rem)] font-extrabold leading-[1.02] tracking-tight text-white [text-shadow:0_2px_24px_rgba(2,48,71,0.5)] [@media(max-height:700px)]:mt-2 [@media(max-height:700px)]:text-[clamp(2rem,3.4vw,3rem)]">
             The island is yours.
           </h1>
-          <p className="mt-4 max-w-[44ch] text-base leading-relaxed text-white [text-shadow:0_1px_14px_rgba(2,48,71,0.55)] md:text-lg">
+          <p className="mx-auto mt-4 max-w-[44ch] text-base leading-relaxed text-white [text-shadow:0_1px_14px_rgba(2,48,71,0.55)] md:text-lg [@media(max-height:700px)]:mt-2">
             {POSITIONING}
           </p>
-          <div className="mt-8 flex flex-wrap items-center gap-x-7 gap-y-5">
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-x-7 gap-y-5 [@media(max-height:700px)]:mt-4">
             <BookCta large />
             <FleetLink />
           </div>
