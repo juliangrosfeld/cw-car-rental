@@ -169,17 +169,36 @@ function FleetCard({ vehicle, eager = false }: { vehicle: Vehicle; eager?: boole
             </span>
           </div>
 
-          {/* "Book this car" — split-slide garment: the label slides away,
-              the invitation rolls in, over this car's own accent bar. */}
+          {/* "Book this car" — the label crossfades to the invitation, over
+              this car's own accent bar.
+
+              Both labels are stacked in ONE grid cell rather than sequenced in
+              a scrolling column. The previous version slid a two-line stack
+              inside an h-[1.5em] clip, which glitched twice over: the lines
+              inherit a line-height taller than 1.5em so the second one was
+              never fully hidden, and -translate-y-full moves an element by its
+              OWN height — two lines — when the travel needed is one. Stacking
+              removes both: nothing moves, and the cell is as tall and as wide
+              as the longer label, so hovering cannot reflow the card.
+
+              The hover label is aria-hidden so the link's accessible name stays
+              "Book this car" instead of both strings run together. On touch
+              there is no hover at all — Tailwind v4 emits hover variants under
+              @media (hover: hover) — so the resting label is what shows. */}
           <Link
             to="/booking"
             search={{ car: vehicle.id }}
             className="mt-4 inline-block font-display text-[15px] font-bold text-cw-navy"
           >
-            <span className="block h-[1.5em] overflow-hidden">
-              <span className="block transition-transform duration-300 ease-out group-hover:-translate-y-full">
-                <span className="block">Book this car</span>
-                <span className="block text-cw-teal-dark">Ban, let's go →</span>
+            <span className="grid">
+              <span className="col-start-1 row-start-1 transition-opacity duration-200 ease-out group-hover:opacity-0">
+                Book this car
+              </span>
+              <span
+                aria-hidden="true"
+                className="col-start-1 row-start-1 text-cw-teal-dark opacity-0 transition-opacity duration-200 ease-out group-hover:opacity-100"
+              >
+                Ban, let&apos;s go →
               </span>
             </span>
             <span className={`mt-1 block h-[3px] w-16 rounded-full ${ACCENT_BAR[vehicle.accent]}`} />
