@@ -96,7 +96,7 @@ function ClientPage() {
             client.value.lastReturn &&
             `Their licence runs out before a rental they already hold returns on ${formatDateShort(
               client.value.lastReturn,
-            )} — check it before the keys go over.`}
+            )}. Check it before the keys go over.`}
           {client.licenceLevel === "expired" && "They cannot legally drive until it is renewed."}
           {client.licenceLevel === "expiring" && "Worth checking at the next handover."}
         </div>
@@ -126,7 +126,7 @@ function ClientPage() {
         />
         <Stat
           label="With CW since"
-          value={client.value.firstPickup ? formatDateShort(client.value.firstPickup) : "—"}
+          value={client.value.firstPickup ? formatDateShort(client.value.firstPickup) : "Not yet"}
           hint={
             client.value.lastPickup
               ? `Last rental ${formatDateShort(client.value.lastPickup)}`
@@ -204,7 +204,7 @@ function ClientPage() {
               </ul>
             )}
             <p className="mt-3 border-t border-cw-navy/8 pt-2 text-[11px] text-cw-ink/45">
-              What they have driven before — worth offering first.
+              What they have driven before, worth offering first.
             </p>
           </div>
         </Panel>
@@ -221,7 +221,7 @@ function ClientPage() {
               <p className="mb-3 max-w-[80ch] text-[12px] leading-relaxed text-cw-ink/60">
                 A booking reuses an existing guest rather than overwriting one, so the same person
                 can end up as more than one record and a record can hold details they have since
-                changed. Nothing here picks a winner — that would quietly delete whichever version
+                changed. Nothing here picks a winner: that would quietly delete whichever version
                 is right. Check which is current, and treat the others as history.
               </p>
               <ul className="divide-y divide-cw-navy/8 border-t border-cw-navy/8">
@@ -362,6 +362,6 @@ function subtitleFor(client: ClientDetail): string {
   const rentals = `${client.value.rentals} ${client.value.rentals === 1 ? "rental" : "rentals"}`;
   const repeat = client.isRepeat
     ? "repeat customer"
-    : `one rental so far — ${REPEAT_THRESHOLD} makes them a repeat customer`;
+    : `one rental so far; ${REPEAT_THRESHOLD} makes them a repeat customer`;
   return `${rentals} · ${formatMoney(client.value.paidCents)} paid · ${repeat}`;
 }

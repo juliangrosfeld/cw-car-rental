@@ -250,7 +250,7 @@ function ListingBlock({ listing, bestCollected }: { listing: FleetCarRow; bestCo
                     </div>
                     {vehicle.plateNumber === null && (
                       <span className="block text-[11px] text-cw-ink/45">
-                        No plate on file — add it on the car&rsquo;s page
+                        No plate on file. Add it on the car&rsquo;s page
                       </span>
                     )}
                   </Td>
@@ -347,7 +347,7 @@ function FleetPage() {
           title="Listings and cars"
           subtitle={`Earnings and utilisation from ${formatDateShort(fleet.windowStart)} to ${formatDateShort(
             fleet.windowEnd,
-          )}. Rates apply to new bookings only — a reservation keeps the price it was quoted.`}
+          )}. Rates apply to new bookings only; a reservation keeps the price it was quoted.`}
         >
           <p className="px-4 py-3 text-[12px] leading-relaxed text-cw-ink/60">
             A guest books a <span className="font-semibold text-cw-navy">listing</span>. The booking

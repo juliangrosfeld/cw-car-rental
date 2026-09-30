@@ -52,7 +52,7 @@ export const VALUES: Value[] = [
     image: '/assets/about/sheteboka-cw-image.png',
     place: 'the north coast at Shete Boka',
     description:
-      "You know exactly what you're getting — the car you booked, the price you agreed to, no surprises at the counter.",
+      "You know exactly what you're getting: the car you booked, the price you agreed to, no surprises at the counter.",
   },
   {
     name: 'Reliable',
@@ -68,7 +68,7 @@ export const VALUES: Value[] = [
     image: '/assets/about/willemstad-cw-images.png',
     place: 'the waterfront in Willemstad',
     description:
-      "We're not behind a counter, we're on the island. Ask us anything — the roads, the beaches, the best lunch spot.",
+      "We're not behind a counter, we're on the island. Ask us anything: the roads, the beaches, the best lunch spot.",
   },
 ]
 

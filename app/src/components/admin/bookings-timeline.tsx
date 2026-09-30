@@ -180,7 +180,7 @@ export function TimelineGrid({
               >
                 <span
                   className="truncate text-[12px] font-semibold text-cw-navy"
-                  title={`${row.listingLabel} — ${row.vehicleLabel}`}
+                  title={`${row.listingLabel} · ${row.vehicleLabel}`}
                 >
                   {row.listingLabel}
                 </span>
@@ -192,7 +192,7 @@ export function TimelineGrid({
                   {!row.isPubliclyVisible && (
                     <span
                       className="ml-1 rounded bg-cw-navy/8 px-1 text-[10px] font-semibold uppercase tracking-[0.04em] text-cw-navy/60"
-                      title="Backup unit — not shown on the public site"
+                      title="Backup unit, not shown on the public site"
                     >
                       hidden
                     </span>
@@ -277,7 +277,7 @@ export function TimelineLegend() {
       {/* Stated explicitly because it looks like an off-by-one until you know
           the rule: the return day is the next rental's pickup day. */}
       <span className="text-cw-ink/45">
-        A bar covers the days billed — it ends the day the car comes back, which is free again.
+        A bar covers the days billed. It ends the day the car comes back, which is free again.
       </span>
     </div>
   );

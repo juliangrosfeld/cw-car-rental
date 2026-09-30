@@ -446,7 +446,7 @@ export function Field({
           mono ? "tabular-nums" : ""
         }`}
       >
-        {empty ? "—" : value}
+        {empty ? "None" : value}
       </p>
       {hint && <p className="mt-0.5 text-[11px] text-cw-ink/45">{hint}</p>}
     </div>

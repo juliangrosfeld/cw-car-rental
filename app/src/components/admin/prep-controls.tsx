@@ -100,7 +100,7 @@ export function PrepAdvanceButton({
     return (
       <span
         className="text-[12px] text-cw-ink/35"
-        title="This booking was cancelled — the car was released."
+        title="This booking was cancelled, so the car was released."
       >
         No prep
       </span>
@@ -166,10 +166,10 @@ export function PrepPipeline({
               onClick={() => write(bookingId, prepStatus, status)}
               title={
                 cancelled
-                  ? "This booking was cancelled — the car was released, so there is no prep to track."
+                  ? "This booking was cancelled and the car was released, so there is no prep to track."
                   : isCurrent
                     ? `Currently ${PREP_LABEL[status]}`
-                    : `Set to ${PREP_LABEL[status]} — ${PREP_MEANING[status]}`
+                    : `Set to ${PREP_LABEL[status]}: ${PREP_MEANING[status]}`
               }
               className={`rounded-lg border-l-[3px] px-2.5 py-1.5 text-[12px] font-semibold transition-colors disabled:cursor-default ${
                 isCurrent

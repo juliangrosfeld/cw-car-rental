@@ -290,7 +290,7 @@ function NewBookingPage() {
           {/* ── the car ───────────────────────────────────────────────── */}
           <Panel
             title="Which car"
-            subtitle="Every physical car, including the ones the public site does not show. This choice is final — nothing reassigns it later."
+            subtitle="Every physical car, including the ones the public site does not show. This choice is final: nothing reassigns it later."
           >
             <div className="space-y-3 px-4 py-4">
               {options.listings.map((listing) => (
@@ -501,7 +501,7 @@ function NewBookingPage() {
                 value={
                   picked ? (
                     <span className="flex flex-wrap items-center gap-1.5">
-                      {picked.listing.label} — {picked.vehicle.label}
+                      {picked.listing.label} · {picked.vehicle.label}
                       {!picked.vehicle.isPubliclyVisible && (
                         <span className="rounded bg-cw-navy/8 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.04em] text-cw-navy/60">
                           Backup
@@ -510,7 +510,7 @@ function NewBookingPage() {
                     </span>
                   ) : null
                 }
-                hint={picked ? "Assigned exactly as chosen — nothing moves it." : "Not chosen yet"}
+                hint={picked ? "Assigned exactly as chosen. Nothing moves it." : "Not chosen yet"}
               />
               <Field
                 label="Dates"
@@ -566,7 +566,7 @@ function NewBookingPage() {
                   className={`mt-1 ${inputClass}`}
                 >
                   <option value="confirmed">Confirmed</option>
-                  <option value="pending">Pending — a hold, not yet firm</option>
+                  <option value="pending">Pending (a hold, not yet firm)</option>
                 </select>
               </label>
 

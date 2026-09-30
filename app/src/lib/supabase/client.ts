@@ -33,7 +33,7 @@ function readPublicEnv() {
     throw new Error(
       "Supabase is not configured. Set SUPABASE_URL and SUPABASE_ANON_KEY (see " +
         ".env.example). These are inlined at BUILD time by vite.config.ts, so on " +
-        "Vercel they must exist as Environment Variables before the build runs — " +
+        "Vercel they must exist as Environment Variables before the build runs. " +
         "adding them afterwards requires a redeploy, not just a restart.",
     );
   }

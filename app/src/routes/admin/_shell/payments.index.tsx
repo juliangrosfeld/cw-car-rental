@@ -74,7 +74,7 @@ function PaymentsPage() {
           nobody can miss it and nothing has to repeat it. */}
       <div className="mb-3 rounded-lg border border-cw-navy/10 bg-cw-navy/[0.03] px-3 py-2.5 text-[12px] leading-relaxed text-cw-ink/70">
         <span className="font-semibold text-cw-navy">
-          {PROVIDER.name} is not connected — waiting on {PROVIDER.blockedOn}.
+          {PROVIDER.name} is not connected, waiting on {PROVIDER.blockedOn}.
         </span>{" "}
         This ledger records what has already changed hands at the counter or in the bank. No screen
         in the back office can charge or refund a card until that integration exists.
@@ -197,7 +197,7 @@ function PaymentsPage() {
                               : "text-cw-ink/35"
                           }
                         >
-                          {row.outstandingCents > 0 ? formatMoney(row.outstandingCents) : "—"}
+                          {row.outstandingCents > 0 ? formatMoney(row.outstandingCents) : "None"}
                         </Td>
                         <Td align="right">
                           <span className="inline-flex flex-col items-end gap-1">
@@ -267,7 +267,7 @@ function PaymentsPage() {
             </ul>
           )}
           <p className="border-t border-cw-navy/8 px-4 py-2 text-[11px] leading-relaxed text-cw-ink/50">
-            A refund is a negative entry, never a deleted one — what was taken and what was given
+            A refund is a negative entry, never a deleted one: what was taken and what was given
             back both stay on the record.
           </p>
         </Panel>

@@ -271,7 +271,7 @@ function DashboardPage() {
                     {!car.isPubliclyVisible && (
                       <span
                         className="shrink-0 rounded bg-cw-navy/8 px-1 text-[10px] font-semibold uppercase tracking-[0.04em] text-cw-navy/60"
-                        title="Backup unit — not shown on the public site"
+                        title="Backup unit, not shown on the public site"
                       >
                         backup
                       </span>

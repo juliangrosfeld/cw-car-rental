@@ -152,7 +152,7 @@ function CarPage() {
       {!car.bookable ? (
         <div className="mb-3 rounded-lg bg-[#fdecec] px-3 py-2.5 text-[13px] text-[#b3261e]">
           <span className="font-semibold">Every car on this listing is off the road.</span> It is
-          not being offered for new bookings at all. Rentals already on the books are unaffected —
+          not being offered for new bookings at all. Rentals already on the books are unaffected;
           they are listed below.
         </div>
       ) : offRoad.length > 0 ? (
@@ -160,7 +160,7 @@ function CarPage() {
           <span className="font-semibold">
             {offRoad.length} of {car.vehicles.length} cars off the road.
           </span>{" "}
-          The listing is still bookable — guests see no change while another car can take the dates.
+          The listing is still bookable: guests see no change while another car can take the dates.
         </div>
       ) : null}
 
@@ -194,7 +194,7 @@ function CarPage() {
               />
               <Stat
                 label="Average length"
-                value={car.stats.rentals === 0 ? "—" : `${car.stats.averageRentalDays} days`}
+                value={car.stats.rentals === 0 ? "None" : `${car.stats.averageRentalDays} days`}
                 hint="Billable days per rental"
               />
             </div>
@@ -217,7 +217,7 @@ function CarPage() {
                 value={
                   car.vehicles
                     .filter((v) => v.onRentalUntil)
-                    .map((v) => `${v.label} — ${v.onRentalFor}`)
+                    .map((v) => `${v.label} · ${v.onRentalFor}`)
                     .join(", ") || null
                 }
                 hint={
@@ -270,7 +270,7 @@ function CarPage() {
           title="Rentals still on the books"
           subtitle={
             car.upcoming.length === 0
-              ? "Nothing outstanding — every rental on this listing is finished"
+              ? "Nothing outstanding: every rental on this listing is finished"
               : `${car.upcoming.length} ${car.upcoming.length === 1 ? "rental" : "rentals"} not yet returned, including any in progress. These stand whatever a car's status.`
           }
         >
@@ -561,7 +561,7 @@ function ListingEditor({ car }: { car: FleetCarDetail }) {
             : `Both rates apply to new bookings only. The ${car.upcoming.length} ${
                 car.upcoming.length === 1 ? "rental" : "rentals"
               } already on the books keep the price they were quoted.`}{" "}
-          Every car on this listing is rented at these rates — a physical car has no price of its
+          Every car on this listing is rented at these rates. A physical car has no price of its
           own.
         </p>
 
@@ -700,11 +700,11 @@ function VehicleEditor({ vehicle }: { vehicle: FleetVehicleRow }) {
       // has just left the site needs to be known about immediately.
       setSaved(
         !result.listingStillBookable
-          ? "Saved. This was the last car on the road for this listing — it is no longer offered for new bookings."
+          ? "Saved. This was the last car on the road for this listing, so it is no longer offered for new bookings."
           : result.wentOffRoad && result.affectedRentals > 0
             ? `Saved. ${result.affectedRentals} ${
                 result.affectedRentals === 1 ? "rental is" : "rentals are"
-              } still booked on this car — they have NOT been cancelled.`
+              } still booked on this car. They have NOT been cancelled.`
             : result.wentOffRoad
               ? "Saved. Nothing was booked on this car, and the listing is still bookable on another."
               : "Saved.",
@@ -782,7 +782,7 @@ function VehicleEditor({ vehicle }: { vehicle: FleetVehicleRow }) {
           <span className="mt-1 block text-[11px] text-cw-ink/50">
             {vehicle.plateNumber === null
               ? "Never recorded for this car. Adding it is how the CRM can name the exact vehicle at handover."
-              : "Two cars cannot share a plate — the database refuses it."}
+              : "Two cars cannot share a plate; the database refuses it."}
           </span>
         </label>
 
@@ -851,7 +851,7 @@ function VehicleEditor({ vehicle }: { vehicle: FleetVehicleRow }) {
                     {vehicle.upcomingCount === 1 ? "rental is" : "rentals are"} already booked on
                     this car.
                   </span>{" "}
-                  Taking it off the road stops NEW assignments only — those rentals stand, and each
+                  Taking it off the road stops NEW assignments only. Those rentals stand, and each
                   one needs moving to another car or calling off by hand.
                 </>
               )}

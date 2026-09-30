@@ -275,7 +275,7 @@ function BookingsPage() {
             action={
               list.truncated ? (
                 <span className="text-[12px] text-[#b3261e]">
-                  Showing the first {list.rows.length} — narrow the filters.
+                  Showing the first {list.rows.length}. Narrow the filters.
                 </span>
               ) : undefined
             }
@@ -340,7 +340,7 @@ function BookingsPage() {
                             {!b.vehicleIsPubliclyVisible && (
                               <span
                                 className="ml-1 rounded bg-cw-navy/8 px-1 text-[10px] font-semibold uppercase tracking-[0.04em] text-cw-navy/60"
-                                title="Backup unit — not the car shown on the site"
+                                title="Backup unit, not the car shown on the site"
                               >
                                 backup
                               </span>

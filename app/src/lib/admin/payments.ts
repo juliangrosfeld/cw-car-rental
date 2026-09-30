@@ -59,7 +59,7 @@ export const PROVIDER = {
   blockedOn: "Clay's signed merchant agreement",
   /** Shown wherever an online refund or charge would otherwise be offered. */
   explain:
-    "Sentoo is not connected yet — it is waiting on the signed merchant agreement. " +
+    "Sentoo is not connected yet. It is waiting on the signed merchant agreement. " +
     "Nothing on this screen can move money through a provider. Recording a payment " +
     "or a refund here is bookkeeping: it says what already happened at the counter " +
     "or in the bank.",

@@ -41,7 +41,7 @@ export default function SectionStub({
             ))}
           </ul>
           <p className="mt-5 rounded-lg bg-cw-mint-soft px-3 py-2 text-[12px] text-cw-ink/65">
-            The data behind this page is already live in Supabase — the booking flow writes to it.
+            The data behind this page is already live in Supabase; the booking flow writes to it.
             Only the screen is missing.
           </p>
         </div>

@@ -48,7 +48,7 @@ export const VEHICLE_STATUS_LABEL: Record<VehicleStatus, string> = {
 export const VEHICLE_STATUS_MEANING: Record<VehicleStatus, string> = {
   available: "Part of the working fleet. Can be assigned to any free dates.",
   maintenance: "In the shop. Not assigned to new bookings; rentals already on it still stand.",
-  offline: "Not being rented at all — sold, insured off, or in personal use.",
+  offline: "Not being rented at all: sold, insured off, or in personal use.",
 };
 
 /** True when a car in this status can be assigned to a new booking. Mirrors the

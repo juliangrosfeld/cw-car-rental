@@ -809,8 +809,8 @@ function CarStep({
 
       {available.length === 0 && !verifying ? (
         <p className="mt-6 rounded-xl bg-cw-yellow-soft px-4 py-4 text-sm font-semibold text-cw-navy">
-          Every car is out for those dates. Try a different range, or message us on WhatsApp —
-          we sometimes have a car back early.
+          Every car is out for those dates. Try a different range, or message us on WhatsApp.
+          We sometimes have a car back early.
         </p>
       ) : (
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
@@ -1192,7 +1192,7 @@ function PayStep({
           )}
         </button>
         <p className="mt-3 text-xs text-cw-ink/55">
-          Sentoo payment is not live yet — your car is held and we settle up at pickup. Prefer
+          Sentoo payment is not live yet. Your car is held and we settle up at pickup. Prefer
           cash or card? Just say so on WhatsApp.
         </p>
       </div>

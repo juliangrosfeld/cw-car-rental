@@ -44,7 +44,7 @@ export function LicenceBadge({ level, expiry }: { level: LicenceLevel; expiry: s
     <span
       title={
         expiry
-          ? `${LICENCE_LABEL[level]} — expires ${formatDateShort(expiry)}`
+          ? `${LICENCE_LABEL[level]}, expires ${formatDateShort(expiry)}`
           : LICENCE_LABEL[level]
       }
       className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${tone}`}

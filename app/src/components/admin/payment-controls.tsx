@@ -117,7 +117,7 @@ export function RecordPayment({ ledger }: { ledger: BookingLedger }) {
       setPending(false);
       setDone(
         direction === "refund"
-          ? "Refund recorded. No money was moved by this — hand it back the same way it came in."
+          ? "Refund recorded. No money was moved by this, so hand it back the same way it came in."
           : "Payment recorded.",
       );
     } catch (cause) {
@@ -232,7 +232,7 @@ export function RecordPayment({ ledger }: { ledger: BookingLedger }) {
           the box is, not in a footnote. */}
       {direction === "charge" && pending && (
         <p className="mt-2 text-[12px] text-cw-ink/60">
-          Recorded as expected, not collected — it will not count towards takings until you mark it
+          Recorded as expected, not collected. It will not count towards takings until you mark it
           arrived by recording it again without this ticked.
         </p>
       )}
@@ -256,7 +256,7 @@ export function RecordPayment({ ledger }: { ledger: BookingLedger }) {
           <button
             type="button"
             disabled
-            title={`${PROVIDER.name} is not connected — blocked on ${PROVIDER.blockedOn}`}
+            title={`${PROVIDER.name} is not connected: blocked on ${PROVIDER.blockedOn}`}
             className="cursor-not-allowed rounded-lg border border-cw-navy/15 bg-white px-3 py-1.5 font-display text-[13px] font-bold text-cw-ink/35"
           >
             Not connected

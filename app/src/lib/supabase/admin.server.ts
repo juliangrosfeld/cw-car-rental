@@ -37,7 +37,7 @@ export function supabaseAdmin(): AppSupabaseAdminClient {
     throw new Error(
       "Supabase admin client is not configured. Set SUPABASE_URL and " +
         "SUPABASE_SERVICE_ROLE_KEY (see .env.example). SUPABASE_SERVICE_ROLE_KEY " +
-        "must be a server-only environment variable — never prefix it with VITE_.",
+        "must be a server-only environment variable. Never prefix it with VITE_.",
     );
   }
 

@@ -136,7 +136,7 @@ function BookingDetailPage() {
       {/* ── the pipeline ─────────────────────────────────────────────────── */}
       <Panel
         title="Prep status"
-        subtitle="One tap moves it on. Any step can be set — a car found dirty goes back."
+        subtitle="One tap moves it on. Any step can be set, so a car found dirty goes back."
         action={
           <span className="flex flex-wrap justify-end gap-1">
             <StatusPill value={booking.bookingStatus} title="Booking status" />
@@ -241,7 +241,7 @@ function BookingDetailPage() {
               <Field
                 label="Notes on this car"
                 value={booking.vehicle.maintenanceNotes}
-                hint="Internal — never read this to a guest."
+                hint="Internal. Never read this to a guest."
               />
             )}
           </div>
@@ -343,7 +343,7 @@ function BookingDetailPage() {
                 </div>
                 {ledger.pendingCents > 0 && (
                   <p className="pt-1 text-[11px] text-cw-ink/50">
-                    {formatMoneyExact(ledger.pendingCents)} recorded as expected but not arrived —
+                    {formatMoneyExact(ledger.pendingCents)} recorded as expected but not arrived,
                     not counted above.
                   </p>
                 )}
@@ -424,7 +424,7 @@ function BookingDetailPage() {
 
       {/* ── notes ────────────────────────────────────────────────────────── */}
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <Panel title="Guest requests" subtitle="The guest's own words — safe to read back to them">
+        <Panel title="Guest requests" subtitle="The guest's own words, safe to read back to them">
           <div className="px-4 py-4">
             {booking.specialRequests ? (
               <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-cw-ink">
@@ -446,7 +446,7 @@ function BookingDetailPage() {
  *  page that can invalidate the rental at the counter. */
 function licenceHint(booking: BookingDetail): string | undefined {
   const expiry = booking.client.licenseExpiry;
-  if (!expiry) return "Not captured yet — scan it at handover.";
+  if (!expiry) return "Not captured yet. Scan it at handover.";
   if (expiry < booking.returnDate) return "⚠ Expires before this rental ends.";
   return undefined;
 }

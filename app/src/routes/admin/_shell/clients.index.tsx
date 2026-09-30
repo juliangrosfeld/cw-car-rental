@@ -90,7 +90,7 @@ function ClientsPage() {
               onKeyDown={(e) => {
                 if (e.key === "Enter") submit();
               }}
-              placeholder="Name, email, or phone — 512 8823 finds +599 9 512 8823"
+              placeholder="Name, email, or phone (512 8823 finds +599 9 512 8823)"
               aria-label="Search clients"
               className="min-w-[280px] flex-1 rounded-lg border border-cw-navy/15 bg-white px-3 py-2 text-[13px] text-cw-ink outline-none transition-colors focus:border-cw-teal focus:ring-2 focus:ring-cw-teal/20"
             />
@@ -149,7 +149,7 @@ function ClientsPage() {
         action={
           list.truncated ? (
             <span className="text-[12px] text-[#b3261e]">
-              Showing the first {list.rows.length} — narrow the search.
+              Showing the first {list.rows.length}. Narrow the search.
             </span>
           ) : undefined
         }
@@ -240,7 +240,7 @@ function ClientsPage() {
                     >
                       {client.value.outstandingCents > 0
                         ? formatMoney(client.value.outstandingCents)
-                        : "—"}
+                        : "None"}
                     </Td>
                     <Td className="whitespace-nowrap text-cw-ink/70">
                       {client.value.lastPickup ? (

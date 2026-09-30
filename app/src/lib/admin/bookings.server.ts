@@ -507,8 +507,8 @@ function toBookingDetail(raw: RawDetailRow): BookingDetail {
       id: car?.id ?? raw.car_id,
       label: carLabel(car),
       model: car?.model ?? "Unknown",
-      color: car?.color ?? "—",
-      category: car?.category ?? "—",
+      color: car?.color ?? "Unknown",
+      category: car?.category ?? "Unknown",
       transmission: car?.transmission ?? "Automatic",
       seats: car?.seats ?? 0,
       dailyRateCents: car?.daily_rate ?? 0,
@@ -517,7 +517,7 @@ function toBookingDetail(raw: RawDetailRow): BookingDetail {
     vehicle: {
       id: vehicle?.id ?? raw.vehicle_id,
       label: unitLabel(vehicle),
-      color: vehicle?.color ?? "—",
+      color: vehicle?.color ?? "Unknown",
       plateNumber: vehicle?.plate_number ?? null,
       isPubliclyVisible: vehicle?.is_publicly_visible ?? true,
       status: vehicle?.status ?? "available",
@@ -638,7 +638,7 @@ export async function setBookingPrepStatus(input: {
     return {
       ok: false,
       reason: "stale",
-      message: `This booking is already "${current.prepStatus.replace(/_/g, " ")}" — someone changed it while this page was open.`,
+      message: `This booking is already "${current.prepStatus.replace(/_/g, " ")}". Someone changed it while this page was open.`,
       booking: current,
     };
   }
