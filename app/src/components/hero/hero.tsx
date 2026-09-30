@@ -10,107 +10,107 @@ import { BookCta } from '../site/nav'
  * WebGL. (The previous scroll-driven 3D hero lives in
  * `src/components/hero-3d-archive/` — see the README there.)
  *
- * Loading is a two-step handoff so the section is never empty:
- *   1. The poster frame paints on first render as a CSS background (170 KB).
- *      It is the first frame of the video, so the swap is invisible.
- *   2. The video source is chosen in an effect (viewport + connection) and
- *      fades in once it can actually play.
+ * The <video> ships in the server HTML, so the browser starts fetching and
+ * autoplaying it with the first bytes of the page instead of waiting for
+ * hydration (that wait was ~1s on a 4G phone). Which rendition to fetch, or
+ * none, is decided by `media` on each <source>, which the browser evaluates
+ * before any JS runs:
+ *   - reduced motion: no source matches, so nothing downloads and the poster
+ *     is the whole hero;
+ *   - fine pointer and wider than 900px: the 1080p cut (3.4 MB);
+ *   - everything else: the 720p cut (1.6 MB). Portrait crops to the centre of
+ *     the frame, where the road and the car already sit, so it loses nothing.
  *
- * The video is deliberately skipped — poster only — for reduced-motion users,
- * Save-Data, and 2g-class connections. Copy and CTAs never depend on it.
+ * The poster is the first frame of the video, so the element shows the same
+ * picture before and after it starts: no fade is needed to hide the swap.
+ *
+ * Save-Data and 2g-class connections can only be read from JS, so once
+ * hydrated those drop the video back to the poster (and low-memory desktops
+ * step down to 720p). Copy and CTAs never depend on the video.
  */
 
 const POSTER = '/assets/hero/curacao-coast-aerial-poster.jpg'
 const SRC_1080 = '/assets/hero/curacao-coast-aerial-1080.mp4'
 const SRC_720 = '/assets/hero/curacao-coast-aerial-720.mp4'
 
-/** Which rendition to fetch, or `null` to stay on the poster entirely. */
-function pickSource(reducedMotion: boolean): string | null {
-  if (reducedMotion) return null
+const MOTION_OK = '(prefers-reduced-motion: no-preference)'
 
-  // Save-Data and slow radio links: the poster is the whole hero. Chromium-only
-  // API, so absence is treated as "no objection", not as "slow".
-  const conn = (
-    navigator as Navigator & {
-      connection?: { saveData?: boolean; effectiveType?: string }
-    }
-  ).connection
-  if (conn?.saveData) return null
-  if (conn?.effectiveType === 'slow-2g' || conn?.effectiveType === '2g') return null
+/*
+ * Raw markup rather than JSX because React never writes `muted` into server
+ * HTML (it only sets the property after hydration), and browsers refuse to
+ * autoplay an unmuted video. Without the attribute the video would wait for
+ * hydration, which is exactly the delay this avoids.
+ */
+const VIDEO_HTML = `<video autoplay muted loop playsinline preload="auto" poster="${POSTER}" aria-hidden="true" tabindex="-1" disablepictureinpicture class="absolute inset-0 h-full w-full object-cover"><source src="${SRC_1080}" type="video/mp4" media="${MOTION_OK} and (min-width: 901px) and (pointer: fine)"><source src="${SRC_720}" type="video/mp4" media="${MOTION_OK}"></video>`
 
-  // Phones, tablets and any coarse-pointer device take the 720p cut (1.6 MB vs
-  // 3.4 MB). Portrait crops to the centre of the frame, where the road and the
-  // car already sit, so the smaller rendition loses nothing that shows.
-  const small = window.matchMedia('(max-width: 900px), (pointer: coarse)').matches
-  const lowMemory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory
-  if (small || (lowMemory !== undefined && lowMemory <= 4)) return SRC_720
-  return SRC_1080
+/** What the connection says about the video, readable only once hydrated. */
+function connectionVerdict(): 'skip' | 'small' | 'ok' {
+  // Chromium-only APIs, so absence is treated as "no objection", not as "slow".
+  const nav = navigator as Navigator & {
+    connection?: { saveData?: boolean; effectiveType?: string }
+    deviceMemory?: number
+  }
+  const conn = nav.connection
+  if (conn?.saveData) return 'skip'
+  if (conn?.effectiveType === 'slow-2g' || conn?.effectiveType === '2g') return 'skip'
+  if (nav.deviceMemory !== undefined && nav.deviceMemory <= 4) return 'small'
+  return 'ok'
 }
 
 export default function Hero() {
   const reducedMotion = useReducedMotion() ?? false
-  const [src, setSrc] = useState<string | null>(null)
-  const [playing, setPlaying] = useState(false)
-  const videoRef = useRef<HTMLVideoElement>(null)
+  const [videoOn, setVideoOn] = useState(true)
+  const wrapRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    setSrc(pickSource(reducedMotion))
+    const video = wrapRef.current?.querySelector('video')
+    if (!video || reducedMotion) return
+    const verdict = connectionVerdict()
+    if (verdict === 'skip') {
+      // Abort whatever has been fetched so far and fall back to the poster.
+      video.pause()
+      video.querySelectorAll('source').forEach((s) => s.remove())
+      video.load()
+      setVideoOn(false)
+      return
+    }
+    if (verdict === 'small' && video.currentSrc.endsWith(SRC_1080)) {
+      video.src = SRC_720
+    }
+    // Autoplay can still be refused (low-power mode, aggressive policies).
+    // That is not an error state: the poster frame is already showing.
+    if (video.paused) {
+      const play = video.play()
+      if (play) play.catch(() => {})
+    }
   }, [reducedMotion])
 
-  // Autoplay can still be refused (low-power mode, aggressive policies). That
-  // is not an error state: the poster is already correct, so we just stay on it.
-  useEffect(() => {
-    const video = videoRef.current
-    if (!video || !src) return
-    // React sets `muted` as a property and does not always reflect it to the
-    // attribute; iOS checks the element itself when deciding whether an inline
-    // autoplay is allowed, so assert it here before asking to play.
-    video.muted = true
-    const play = video.play()
-    if (play) play.catch(() => setPlaying(false))
-  }, [src])
-
   return (
-    <section className="relative isolate flex min-h-dvh flex-col justify-end overflow-hidden">
-      {/* 1. Poster frame — the hero has a real image from first paint, and
-             keeps one for good if the video is skipped or never arrives. */}
+    <section className="relative isolate flex min-h-svh flex-col justify-center overflow-hidden">
+      {/* 1. Poster frame. Paints before the video element has decoded anything,
+             and stays as the hero for good if the video is skipped. */}
       <div
         aria-hidden="true"
         className="absolute inset-0 bg-cw-navy bg-cover bg-center"
         style={{ backgroundImage: `url(${POSTER})` }}
       />
 
-      {/* 2. The footage, fading over the poster once it is genuinely playing. */}
-      {src && (
-        <video
-          ref={videoRef}
-          src={src}
-          poster={POSTER}
-          autoPlay
-          muted
-          loop
-          playsInline
-          preload="auto"
+      {/* 2. The footage, from the server HTML (see VIDEO_HTML). */}
+      {videoOn && (
+        <div
+          ref={wrapRef}
           aria-hidden="true"
-          tabIndex={-1}
-          disablePictureInPicture
-          onPlaying={() => setPlaying(true)}
-          className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-700 ease-out ${
-            playing ? 'opacity-100' : 'opacity-0'
-          }`}
+          className="absolute inset-0"
+          dangerouslySetInnerHTML={{ __html: VIDEO_HTML }}
         />
       )}
 
       {/* 3. Scrim. The footage is bright — sunlit scrub and turquoise reef — so
              legibility is bought here, not with text shadows alone:
-             a navy wash overall, a deep foot under the copy, and a top band so
-             the transparent nav's white marks hold over the water.
-
-             The foot was lightened (0.54/0.9 -> 0.46/0.80) when the left-hand
-             wash came out: with nothing else greying the frame it read as a
-             band rather than a fade. Measured against the loop's brightest
-             frames, the copy still clears 11:1 — the floor for white-on-video
-             here is 4.5:1, so the headroom is spent on the reef, not on text.
+             a navy wash overall, a deep foot at the bottom of frame, and a top
+             band so the transparent nav's white marks hold over the water. The
+             copy now sits mid-frame, where this gradient is clear, so its
+             contrast comes from the left-hand wash below instead.
 
              The TOP band is deliberately untouched. The nav's worst case is
              3.9:1, already under AA for its size, and that is the bright water
@@ -126,12 +126,34 @@ export default function Hero() {
             'linear-gradient(180deg, rgba(2,48,71,0.55) 0%, rgba(2,48,71,0.14) 20%, rgba(2,48,71,0) 40%, rgba(2,48,71,0.46) 74%, rgba(2,48,71,0.8) 100%)',
         }}
       />
-      {/* 4. Copy. Centred, and deliberately low in the frame: the drone tracks
-             the car, which therefore sits near the middle of the shot for the
-             whole loop (measured: x 49-55%, y 39-56% of frame). Bottom-anchoring
-             is what keeps centred copy off it — see the padding below. */}
-      <div className="relative z-10 mx-auto w-full max-w-[1160px] px-5 pb-[4dvh] pt-32 text-center md:px-8 md:pb-[6dvh]">
+      {/* The pull from the left, back now that the copy sits mid-frame on the
+          left instead of down in the dark foot of the scrim above. Sized by
+          measurement, not taste: stepping through the whole loop at five md+
+          viewports, the body copy fell to 3.3:1 without it and clears 5.1:1
+          with it. The heavier washes tried bought headroom nobody needs and
+          took more of the reef, which this one still keeps at ~73% brightness.
+          Phones don't need it: the copy there already clears 5.1:1. */}
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 hidden md:block"
+        style={{
+          background:
+            'linear-gradient(90deg, rgba(2,48,71,0.5) 0%, rgba(2,48,71,0.14) 34%, rgba(2,48,71,0) 62%)',
+        }}
+      />
+
+      {/* 4. Copy. Vertically centred, held to the left of frame. The drone
+             tracks the car, so it sits in one column for the whole loop
+             (measured: x 49-55%, y 39-56% of the source frame); from md up the
+             copy stays left of that column at every height, which is the only
+             separation that survives vertical centring. Below md the copy spans
+             the width and does sit over the car — an accepted trade. */}
+      <div className="relative z-10 mx-auto w-full max-w-[1160px] px-5 py-24 md:px-8">
+        {/* md+: the column's right edge stops at 47vw, measured from where the
+            centred container actually starts, so it clears the car's left edge
+            (49vw) at every width rather than only at the one it was tuned on. */}
         <motion.div
+          className="md:max-w-[calc(47vw_-_max(0px,(100vw_-_1160px)/2)_-_2rem)]"
           initial={reducedMotion ? false : { opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
@@ -139,13 +161,13 @@ export default function Hero() {
           <p className="font-display text-lg font-bold text-cw-yellow [text-shadow:0_1px_12px_rgba(2,48,71,0.5)]">
             Bon bini!
           </p>
-          <h1 className="mx-auto mt-3 max-w-[16ch] font-display text-[clamp(2.6rem,4.6vw,4.2rem)] font-extrabold leading-[1.02] tracking-tight text-white [text-shadow:0_2px_24px_rgba(2,48,71,0.5)] [@media(max-height:700px)]:mt-2 [@media(max-height:700px)]:text-[clamp(2rem,3.4vw,3rem)]">
+          <h1 className="mt-3 max-w-[16ch] font-display text-[clamp(2.6rem,4.6vw,4.2rem)] font-extrabold leading-[1.02] tracking-tight text-white [text-shadow:0_2px_24px_rgba(2,48,71,0.5)] [@media(max-height:700px)]:mt-2 [@media(max-height:700px)]:text-[clamp(2rem,3.4vw,3rem)]">
             The island is yours.
           </h1>
-          <p className="mx-auto mt-4 max-w-[44ch] text-base leading-relaxed text-white [text-shadow:0_1px_14px_rgba(2,48,71,0.55)] md:text-lg [@media(max-height:700px)]:mt-2">
+          <p className="mt-4 max-w-[44ch] text-base leading-relaxed text-white [text-shadow:0_1px_14px_rgba(2,48,71,0.55)] md:text-lg [@media(max-height:700px)]:mt-2">
             {POSITIONING}
           </p>
-          <div className="mt-8 flex flex-wrap items-center justify-center gap-x-7 gap-y-5 [@media(max-height:700px)]:mt-4">
+          <div className="mt-8 flex flex-wrap items-center gap-x-7 gap-y-5 [@media(max-height:700px)]:mt-4">
             <BookCta large />
             <FleetLink />
           </div>
