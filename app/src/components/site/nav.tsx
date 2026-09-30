@@ -43,9 +43,9 @@ export default function Nav() {
 
   return (
     <header
-      className={`fixed inset-x-0 top-0 z-50 transition-[background,box-shadow,backdrop-filter] duration-500 ${
+      className={`fixed inset-x-0 top-0 z-50 transition-[background,box-shadow] duration-500 ${
         solid
-          ? 'bg-gradient-to-r from-cw-teal via-cw-teal to-cw-mint shadow-[0_8px_30px_rgba(2,48,71,0.18)] backdrop-blur-md'
+          ? 'bg-gradient-to-r from-cw-teal via-cw-teal to-cw-mint shadow-[0_8px_30px_rgba(2,48,71,0.18)]'
           : 'bg-transparent'
       }`}
     >

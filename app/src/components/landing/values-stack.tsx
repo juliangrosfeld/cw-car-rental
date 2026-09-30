@@ -15,6 +15,11 @@ import { VALUES } from '../../content/brand'
  *      lighter ground under it without pushing the colour past the 50% the
  *      chapter is meant to read at.
  *
+ * Chapters are h-lvh, not h-dvh: dvh tracks the mobile toolbar, so every
+ * chapter resized mid-scroll as the toolbar collapsed, which read as the page
+ * glitching. lvh is fixed at the toolbar-hidden height, so a chapter always
+ * covers the screen and never changes size under a thumb.
+ *
  * A chapter must stay fully opaque or the previous one shows through as it
  * slides under. The photo is what guarantees that, so it is a real <img> (with
  * eager decoding) and not a background-image that might not have painted yet.
@@ -28,7 +33,7 @@ export default function ValuesStack() {
       {VALUES.map((value, i) => (
         <div
           key={value.name}
-          className="sticky top-0 flex h-dvh items-center overflow-hidden bg-cw-navy"
+          className="sticky top-0 flex h-lvh items-center overflow-hidden bg-cw-navy"
           style={{ zIndex: i + 1 }}
         >
           <img
@@ -36,7 +41,7 @@ export default function ValuesStack() {
             alt=""
             aria-hidden="true"
             decoding="async"
-            loading={i === 0 ? 'eager' : 'lazy'}
+            loading="lazy"
             className="absolute inset-0 h-full w-full object-cover"
           />
           {/* The colour wash. */}

@@ -80,8 +80,8 @@ export default function FleetSection() {
         </div>
 
         <div className="mt-16 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {FLEET.map((vehicle, i) => (
-            <FleetCard key={vehicle.id} vehicle={vehicle} eager={i === 0} />
+          {FLEET.map((vehicle) => (
+            <FleetCard key={vehicle.id} vehicle={vehicle} />
           ))}
         </div>
       </div>
@@ -89,7 +89,7 @@ export default function FleetSection() {
   )
 }
 
-function FleetCard({ vehicle, eager = false }: { vehicle: Vehicle; eager?: boolean }) {
+function FleetCard({ vehicle }: { vehicle: Vehicle }) {
   const [tiltOn, setTiltOn] = useState(false)
   const rx = useMotionValue(0)
   const ry = useMotionValue(0)
@@ -129,7 +129,8 @@ function FleetCard({ vehicle, eager = false }: { vehicle: Vehicle; eager?: boole
         <img
           src={vehicle.photo}
           alt={`${vehicle.name}, ${vehicle.colorNote.toLowerCase()}`}
-          loading={eager ? 'eager' : 'lazy'}
+          loading="lazy"
+          decoding="async"
           className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.03]"
         />
         {vehicle.flagship && (
