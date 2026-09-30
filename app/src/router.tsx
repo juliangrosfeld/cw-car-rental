@@ -9,6 +9,10 @@ export const getRouter = () => {
     routeTree,
     context: { queryClient },
     scrollRestoration: true,
+    // Page changes cross-fade through the browser's View Transitions API
+    // (timing and the pinned nav live in styles.css). Browsers without it
+    // switch instantly, exactly as before; there is no JS fallback to ship.
+    defaultViewTransition: true,
     defaultPreloadStaleTime: 0,
   });
 
