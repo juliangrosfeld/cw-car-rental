@@ -60,7 +60,7 @@ export default function Nav() {
             <img
               src="/assets/cw-logo-lockup-480.png"
               alt=""
-              className="h-9 w-auto shrink-0 select-none"
+              className="h-11 w-auto shrink-0 select-none"
               draggable={false}
             />
           </span>
