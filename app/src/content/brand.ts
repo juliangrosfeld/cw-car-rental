@@ -31,7 +31,7 @@ export const CONTACT = {
 export interface Value {
   name: string
   /** Tailwind class for the chapter's colour wash, laid over `image`. */
-  ground: 'bg-cw-yellow' | 'bg-cw-peach' | 'bg-cw-mint'
+  ground: 'bg-cw-yellow' | 'bg-cw-peach' | 'bg-cw-mint' | 'bg-cw-teal'
   /** Full-bleed island photo behind the wash. */
   image: string
   /** Alt text is empty on render (decorative); this is the described place. */
@@ -40,15 +40,15 @@ export interface Value {
 }
 
 /**
- * Each chapter pairs a brand colour with an island photo. The colour->photo
- * pairings are the ones the About page's waypoints already use (peach/Westpunt,
- * yellow/Shete Boka, mint/Willemstad), so a place always arrives in the same
- * colour wherever it appears on the site.
+ * Each chapter pairs a brand colour with an island photo. Reliable and
+ * Experience match the About page's waypoints (peach/Westpunt,
+ * mint/Willemstad); Trust deliberately takes teal here rather than the
+ * waypoints' yellow for Shete Boka.
  */
 export const VALUES: Value[] = [
   {
     name: 'Trust',
-    ground: 'bg-cw-yellow',
+    ground: 'bg-cw-teal',
     image: '/assets/about/sheteboka-cw-image.png',
     place: 'the north coast at Shete Boka',
     description:
