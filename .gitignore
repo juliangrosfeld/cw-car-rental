@@ -1,1 +1,5 @@
 node_modules
+
+# Video/photo masters: source-of-truth media, transcoded into app/public/assets.
+# Far too large to commit — keep locally or in shared storage.
+media-src/
