@@ -6,22 +6,54 @@
  * implementation. The server still recomputes rather than trusting the client;
  * sharing the function just means the two agree when nobody is cheating.
  *
- * DAY MODEL — a rental occupies the HALF-OPEN interval [pickup, return). The
- * car is back on the morning of the return day, so that day can start the next
- * rental. This is the same rule the `bookings_no_double_booking` exclusion
+ * DAY MODEL — a rental occupies the HALF-OPEN interval [pickup, return). This
+ * is the same rule the `bookings_no_double_booking_vehicle` exclusion
  * constraint enforces in Postgres; keep the two in step.
+ *
+ * The constraint works on real timestamps (date + the guest's chosen time), so
+ * it is the authority on whether two bookings collide. The helpers below that
+ * work on DATES alone (carFreeForRange, dayFullyBooked, splitFleet) only feed
+ * the calendar and the instant car-step preview: they treat a return day as
+ * free, which is a good hint and not a guarantee, since a car due back at 18:00
+ * cannot go out at 09:00 that day. The server's time-aware answer replaces the
+ * preview as soon as it lands, and the constraint settles any race.
+ *
+ * Billing stays by calendar day: the times decide WHEN the handovers happen,
+ * not how many days are charged.
  *
  * MONEY — cents everywhere, matching the database. Only src/lib/money.ts
  * converts, and it prints XCG (the Caribbean guilder), which is what CW quotes.
  */
 export { formatMoney } from "../money";
 
-/** Wall-clock handover times. The wizard collects dates only; these fill in the
- *  time-of-day the schema requires. Both 10:00, which is what makes a same-day
- *  handover (one guest returns, the next collects) land exactly on the boundary
- *  of the half-open interval rather than overlapping. */
-export const PICKUP_TIME = "10:00:00";
-export const RETURN_TIME = "10:00:00";
+/** The handover time used when nobody chose one. The public wizard now asks
+ *  for real times (HANDOVER_TIMES below); this default covers the paths that
+ *  still do not, such as the CRM's manual booking form, and preselects the
+ *  wizard's pickers. */
+export const DEFAULT_HANDOVER_TIME = "10:00:00";
+/** Kept for the CRM's manual booking path, which has no time picker yet. */
+export const PICKUP_TIME = DEFAULT_HANDOVER_TIME;
+export const RETURN_TIME = DEFAULT_HANDOVER_TIME;
+
+/**
+ * The wall-clock times a guest can pick for pickup and drop-off: every half
+ * hour from 08:00 to 20:00. 'HH:MM:SS', the shape the `time` columns store.
+ *
+ * A fixed list rather than a free time input, for the same reason as the price
+ * book: the server re-validates against it, so a crafted request cannot ask for
+ * a 03:17 handover nobody will be awake for.
+ */
+export const HANDOVER_TIMES: readonly string[] = Array.from({ length: 25 }, (_, i) => {
+  const minutes = 8 * 60 + i * 30;
+  return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}:00`;
+});
+
+export function isHandoverTime(value: unknown): value is string {
+  return typeof value === "string" && HANDOVER_TIMES.includes(value);
+}
+
+/** 'HH:MM:SS' → 'HH:MM', how times print everywhere on the site. */
+export const fmtTime = (time: string) => time.slice(0, 5);
 
 /** How far ahead the calendar loads existing bookings. */
 export const CALENDAR_HORIZON_DAYS = 240;
@@ -155,7 +187,7 @@ export function monthlyReturnDate(pickupDate: string): string {
 }
 
 /**
- * The dates a booking actually occupies.
+ * The dates and times a booking actually occupies.
  *
  * For a monthly rental the return date is DERIVED, never accepted: the guest
  * picks a start day and the period is fixed. The server calls this before it
@@ -166,10 +198,14 @@ export function resolveWindow(
   rentalType: RentalType,
   pickupDate: string,
   returnDate?: string | null,
-): { pickupDate: string; returnDate: string } {
+  pickupTime: string = DEFAULT_HANDOVER_TIME,
+  returnTime: string = DEFAULT_HANDOVER_TIME,
+): { pickupDate: string; returnDate: string; pickupTime: string; returnTime: string } {
   return {
     pickupDate,
     returnDate: rentalType === "monthly" ? monthlyReturnDate(pickupDate) : (returnDate ?? ""),
+    pickupTime,
+    returnTime,
   };
 }
 

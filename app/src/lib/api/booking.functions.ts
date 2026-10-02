@@ -13,6 +13,7 @@ import { z } from "zod";
 
 import {
   createBooking,
+  createLicenseUploadTicket,
   findAvailableCars,
   findBusyRanges,
   getBookingConfirmation,
@@ -22,10 +23,13 @@ import {
 import {
   CALENDAR_HORIZON_DAYS,
   DAY_MS,
+  DEFAULT_HANDOVER_TIME,
   RENTAL_TYPES,
+  isHandoverTime,
   resolveWindow,
   toKey,
 } from "../booking/rental";
+import { LICENSE_PHOTO_PATH_RE, LICENSE_PHOTO_TYPES } from "../booking/license";
 import type { Car } from "../supabase/types";
 
 /** The car fields safe to serialise to the browser. `cars` is anon-readable in
@@ -65,9 +69,16 @@ const dateSchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, "Expected a YYYY-MM-DD date");
 
+/** One of HANDOVER_TIMES. Defaults to the old fixed 10:00 so a browser still
+ *  running the pre-time-picker bundle keeps working across a deploy. */
+const timeSchema = z
+  .string()
+  .refine(isHandoverTime, "Pick a handover time from the list")
+  .default(DEFAULT_HANDOVER_TIME);
+
 /**
- * A rental as the browser describes it: a type and a start, plus an end that
- * only a daily rental supplies.
+ * A rental as the browser describes it: a type, a start and the two handover
+ * times, plus an end date that only a daily rental supplies.
  *
  * The end of a MONTHLY rental is never accepted from the client — resolveWindow
  * derives it, here and again inside createBooking. Accepting it would let a
@@ -78,6 +89,8 @@ const requestSchema = z
     rentalType: z.enum(RENTAL_TYPES),
     pickupDate: dateSchema,
     returnDate: dateSchema.optional().nullable(),
+    pickupTime: timeSchema,
+    returnTime: timeSchema,
   })
   .refine((w) => w.rentalType === "monthly" || (w.returnDate && w.returnDate > w.pickupDate), {
     message: "Return date must be after the pickup date",
@@ -116,7 +129,13 @@ export const getFleetAvailability = createServerFn({ method: "GET" }).handler(as
 export const getAvailableCars = createServerFn({ method: "POST" })
   .inputValidator(requestSchema)
   .handler(async ({ data }) => {
-    const window = resolveWindow(data.rentalType, data.pickupDate, data.returnDate);
+    const window = resolveWindow(
+      data.rentalType,
+      data.pickupDate,
+      data.returnDate,
+      data.pickupTime,
+      data.returnTime,
+    );
     try {
       const cars = await findAvailableCars(window);
       return { ok: true as const, cars: cars.map(toPublicCar), window };
@@ -135,11 +154,30 @@ const submitSchema = requestSchema.and(
     email: z.string().trim().email("That email does not look complete."),
     phone: z.string().trim().min(7, "A phone or WhatsApp number helps us meet you."),
     pickupLocation: z.string().min(1),
-    returnLocation: z.string().min(1),
+    returnLocation: z.string().trim().min(1, "Tell us where to collect the car.").max(200),
     flightNumber: z.string().max(20).optional().nullable(),
     specialRequests: z.string().max(2000).optional().nullable(),
+    license: z.object({
+      number: z.string().trim().min(4, "That license number looks too short.").max(40),
+      expiry: dateSchema,
+      photoPath: z.string().regex(LICENSE_PHOTO_PATH_RE, "Please upload your license photo again."),
+    }),
   }),
 );
+
+/**
+ * A one-time upload slot for a driver's license photo. The browser then puts
+ * the file straight into the private bucket with `uploadToSignedUrl`, and sends
+ * back only the returned path with the booking. See createLicenseUploadTicket
+ * for why the server, not the browser, picks the key.
+ */
+export const createLicenseUpload = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      contentType: z.enum(Object.keys(LICENSE_PHOTO_TYPES) as [string, ...string[]]),
+    }),
+  )
+  .handler(async ({ data }) => createLicenseUploadTicket(data.contentType));
 
 /**
  * Create a booking. NOTE what is absent from the input schema: there is no

@@ -3,17 +3,26 @@ import { AnimatePresence, MotionConfig, motion } from 'framer-motion'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CONTACT, PICKUP_LOCATIONS } from '../../content/brand'
 import {
+  createLicenseUpload,
   getAvailableCars,
   getFleetAvailability,
   submitBooking,
   type PublicCar,
 } from '../../lib/api/booking.functions'
 import {
+  LICENSE_BUCKET,
+  LICENSE_PHOTO_MAX_BYTES,
+  LICENSE_PHOTO_TYPES,
+} from '../../lib/booking/license'
+import {
+  DEFAULT_HANDOVER_TIME,
   DISCOUNT_TIERS,
+  HANDOVER_TIMES,
   MAX_SELF_SERVICE_DAYS,
   MIN_RENTAL_DAYS,
   MONTHLY_PERIOD_DAYS,
   fmtDay,
+  fmtTime,
   formatMoney,
   fromKey,
   monthlyReturnDate,
@@ -26,6 +35,7 @@ import {
   type RentalType,
 } from '../../lib/booking/rental'
 import { CURRENCY_CODE } from '../../lib/money'
+import { supabase } from '../../lib/supabase/client'
 import Calendar from './calendar'
 
 /**
@@ -64,7 +74,7 @@ import Calendar from './calendar'
  * place they become XCG.
  */
 
-const STEPS = ['Rental', 'Dates', 'Car', 'Details', 'Review', 'Pay'] as const
+const STEPS = ['Rental', 'Dates', 'Car', 'Details', 'Review', 'Confirm'] as const
 
 /** Step indices, named. Six of them and a lot of `step === 3` reads badly. */
 const STEP = { TYPE: 0, DATES: 1, CAR: 2, DETAILS: 3, REVIEW: 4, PAY: 5 } as const
@@ -77,6 +87,29 @@ interface Details {
   phone: string
   flight: string
   note: string
+  licenseNumber: string
+  /** 'YYYY-MM-DD', straight from <input type="date">. */
+  licenseExpiry: string
+  /** Storage key, set once the photo has actually landed in the bucket. */
+  licensePhotoPath: string
+}
+
+/** Where the license photo upload is. The preview is a local object URL, so
+ *  the guest sees their own photo without it ever being read back. */
+type LicensePhoto =
+  | { status: 'idle' }
+  | { status: 'uploading' | 'done'; name: string; previewUrl: string }
+  | { status: 'error'; message: string }
+
+const EMPTY_DETAILS: Details = {
+  name: '',
+  email: '',
+  phone: '',
+  flight: '',
+  note: '',
+  licenseNumber: '',
+  licenseExpiry: '',
+  licensePhotoPath: '',
 }
 
 type Confirmed = Extract<Awaited<ReturnType<typeof submitBooking>>, { ok: true }>['confirmation']
@@ -90,10 +123,16 @@ export default function BookingWizard({ initialCarId }: { initialCarId?: string 
   const [start, setStart] = useState<Date | undefined>()
   const [end, setEnd] = useState<Date | undefined>()
   const [location, setLocation] = useState(PICKUP_LOCATIONS[0].id)
+  const [pickupTime, setPickupTime] = useState(DEFAULT_HANDOVER_TIME)
+  const [returnTime, setReturnTime] = useState(DEFAULT_HANDOVER_TIME)
+  /** Free text: the address we collect the car from at the end. */
+  const [dropoff, setDropoff] = useState('')
+  const [dropoffError, setDropoffError] = useState<string | undefined>()
   const [carId, setCarId] = useState<string | undefined>()
   const [carNotice, setCarNotice] = useState<string | undefined>()
   const [dateNotice, setDateNotice] = useState<string | undefined>()
-  const [details, setDetails] = useState<Details>({ name: '', email: '', phone: '', flight: '', note: '' })
+  const [details, setDetails] = useState<Details>(EMPTY_DETAILS)
+  const [photo, setPhoto] = useState<LicensePhoto>({ status: 'idle' })
   const [errors, setErrors] = useState<Partial<Record<keyof Details, string>>>({})
   const [confirmation, setConfirmation] = useState<Confirmed | undefined>()
 
@@ -143,17 +182,24 @@ export default function BookingWizard({ initialCarId }: { initialCarId?: string 
 
   /* ---- server's authoritative availability for the chosen range ---- */
   const availabilityQuery = useQuery({
-    queryKey: ['available-cars', rentalType, startKey, endKey],
+    queryKey: ['available-cars', rentalType, startKey, endKey, pickupTime, returnTime],
     queryFn: () =>
       getAvailableCars({
-        data: { rentalType, pickupDate: startKey!, returnDate: endKey ?? null },
+        data: {
+          rentalType,
+          pickupDate: startKey!,
+          returnDate: endKey ?? null,
+          pickupTime,
+          returnTime,
+        },
       }),
     enabled: datesUsable && step >= STEP.CAR,
     staleTime: 30_000,
   })
 
   // Client-side split for instant feedback; replaced by the server's answer the
-  // moment it lands. Both use the same half-open overlap rule.
+  // moment it lands. The preview works in whole days; the server's answer is
+  // the one that knows the handover times (see the day model in rental.ts).
   const split = useMemo(() => {
     if (!startKey || !endKey) return { available: cars, unavailable: [] as PublicCar[] }
     if (availabilityQuery.data?.ok) {
@@ -192,14 +238,21 @@ export default function BookingWizard({ initialCarId }: { initialCarId?: string 
           rentalType,
           pickupDate: startKey!,
           returnDate: rentalType === 'monthly' ? null : endKey!,
+          pickupTime,
+          returnTime,
           carId: carId!,
           fullName: details.name,
           email: details.email,
           phone: details.phone,
           pickupLocation: locationLabel,
-          returnLocation: locationLabel,
+          returnLocation: dropoff.trim(),
           flightNumber: details.flight || null,
           specialRequests: details.note || null,
+          license: {
+            number: details.licenseNumber.trim(),
+            expiry: details.licenseExpiry,
+            photoPath: details.licensePhotoPath,
+          },
         },
       }),
     onSuccess: (result) => {
@@ -222,6 +275,18 @@ export default function BookingWizard({ initialCarId }: { initialCarId?: string 
       if (result.reason === 'below_minimum' || result.reason === 'custom_quote') {
         setDateNotice(result.message)
         setStep(STEP.DATES)
+        return
+      }
+      // A license refusal is about the driver: back to their details, with the
+      // server's reason on the field it concerns.
+      if (result.reason === 'license_invalid') {
+        const photoProblem = /photo/i.test(result.message)
+        if (photoProblem) {
+          setPhoto({ status: 'idle' })
+          setDetails((d) => ({ ...d, licensePhotoPath: '' }))
+        }
+        setErrors(photoProblem ? { licensePhotoPath: result.message } : { licenseExpiry: result.message })
+        setStep(STEP.DETAILS)
         return
       }
       setCarId(undefined)
@@ -254,6 +319,11 @@ export default function BookingWizard({ initialCarId }: { initialCarId?: string 
 
   const continueFromDates = () => {
     if (!datesUsable) return
+    if (!dropoff.trim()) {
+      setDropoffError('Tell us where we should collect the car at the end.')
+      return
+    }
+    setDropoffError(undefined)
     setDateNotice(undefined)
     // Dates changed under a chosen car: keep progress, flag the car step.
     if (carId && !split.available.some((c) => c.id === carId)) {
@@ -270,8 +340,44 @@ export default function BookingWizard({ initialCarId }: { initialCarId?: string 
       next.email = 'That email does not look complete.'
     if (details.phone.replace(/\D/g, '').length < 7)
       next.phone = 'A phone or WhatsApp number helps us meet you.'
+    if (details.licenseNumber.trim().length < 4)
+      next.licenseNumber = 'We need the number on your driver\'s license.'
+    if (!details.licenseExpiry) next.licenseExpiry = 'When does your license expire?'
+    else if (endKey && details.licenseExpiry < endKey)
+      next.licenseExpiry = 'Your license needs to be valid until the car is back.'
+    if (photo.status === 'uploading') next.licensePhotoPath = 'Hang on, your photo is still uploading.'
+    else if (!details.licensePhotoPath) next.licensePhotoPath = 'Add a photo of your license.'
     setErrors(next)
     if (Object.keys(next).length === 0) advance(STEP.REVIEW)
+  }
+
+  /** Photo straight to the private bucket, on a slot the server issued. Only
+   *  the resulting key travels with the booking. */
+  const uploadLicensePhoto = async (file: File) => {
+    setErrors((e) => ({ ...e, licensePhotoPath: undefined }))
+    setDetails((d) => ({ ...d, licensePhotoPath: '' }))
+    if (!LICENSE_PHOTO_TYPES[file.type]) {
+      setPhoto({ status: 'error', message: 'Please use a JPG, PNG, WEBP or HEIC photo.' })
+      return
+    }
+    if (file.size > LICENSE_PHOTO_MAX_BYTES) {
+      setPhoto({ status: 'error', message: 'That photo is over 10 MB. Try a smaller one.' })
+      return
+    }
+    const previewUrl = URL.createObjectURL(file)
+    setPhoto({ status: 'uploading', name: file.name, previewUrl })
+    try {
+      const slot = await createLicenseUpload({ data: { contentType: file.type } })
+      const { error } = await supabase()
+        .storage.from(LICENSE_BUCKET)
+        .uploadToSignedUrl(slot.path, slot.token, file, { contentType: file.type })
+      if (error) throw error
+      setDetails((d) => ({ ...d, licensePhotoPath: slot.path }))
+      setPhoto({ status: 'done', name: file.name, previewUrl })
+    } catch {
+      URL.revokeObjectURL(previewUrl)
+      setPhoto({ status: 'error', message: 'The upload did not go through. Please try again.' })
+    }
   }
 
   return (
@@ -330,12 +436,22 @@ export default function BookingWizard({ initialCarId }: { initialCarId?: string 
                   needsCustomQuote={needsCustomQuote}
                   belowMinimum={belowMinimum}
                   canContinue={datesUsable}
+                  pickupTime={pickupTime}
+                  returnTime={returnTime}
+                  dropoff={dropoff}
+                  dropoffError={dropoffError}
                   onDates={(s, e) => {
                     setStart(s)
                     setEnd(e)
                     setDateNotice(undefined)
                   }}
                   onLocation={setLocation}
+                  onPickupTime={setPickupTime}
+                  onReturnTime={setReturnTime}
+                  onDropoff={(v) => {
+                    setDropoff(v)
+                    if (v.trim()) setDropoffError(undefined)
+                  }}
                   onContinue={continueFromDates}
                 />
               ) : step === STEP.CAR && startKey && endKey && datesUsable ? (
@@ -360,7 +476,18 @@ export default function BookingWizard({ initialCarId }: { initialCarId?: string 
                 <DetailsStep
                   details={details}
                   errors={errors}
-                  onChange={(patch) => setDetails((d) => ({ ...d, ...patch }))}
+                  photo={photo}
+                  minExpiry={endKey}
+                  onPhoto={uploadLicensePhoto}
+                  onChange={(patch) => {
+                    setDetails((d) => ({ ...d, ...patch }))
+                    // Editing a field retires its error; Continue re-checks everything.
+                    setErrors((e) => {
+                      const next = { ...e }
+                      for (const key of Object.keys(patch) as (keyof Details)[]) delete next[key]
+                      return next
+                    })
+                  }}
                   onContinue={continueFromDetails}
                 />
               ) : step === STEP.REVIEW && car && startKey && endKey && currentQuote ? (
@@ -370,6 +497,9 @@ export default function BookingWizard({ initialCarId }: { initialCarId?: string 
                   end={fromKey(endKey)}
                   quote={currentQuote}
                   locationLabel={locationLabel}
+                  dropoff={dropoff.trim()}
+                  pickupTime={pickupTime}
+                  returnTime={returnTime}
                   details={details}
                   onEdit={goTo}
                   onContinue={() => advance(STEP.PAY)}
@@ -613,8 +743,15 @@ function DatesStep({
   needsCustomQuote,
   belowMinimum,
   canContinue,
+  pickupTime,
+  returnTime,
+  dropoff,
+  dropoffError,
   onDates,
   onLocation,
+  onPickupTime,
+  onReturnTime,
+  onDropoff,
   onContinue,
 }: {
   rentalType: RentalType
@@ -629,8 +766,15 @@ function DatesStep({
   needsCustomQuote: boolean
   belowMinimum: boolean
   canContinue: boolean
+  pickupTime: string
+  returnTime: string
+  dropoff: string
+  dropoffError?: string
   onDates: (s?: Date, e?: Date) => void
   onLocation: (id: string) => void
+  onPickupTime: (t: string) => void
+  onReturnTime: (t: string) => void
+  onDropoff: (v: string) => void
   onContinue: () => void
 }) {
   const monthly = rentalType === 'monthly'
@@ -640,8 +784,8 @@ function DatesStep({
         title={monthly ? 'When do you collect?' : 'When and where?'}
         sub={
           monthly
-            ? `Tap your collection day. We book a ${MONTHLY_PERIOD_DAYS} day period from there and tell us where to hand you the keys.`
-            : `Pick your days, tell us where to hand you the keys. Minimum ${MIN_RENTAL_DAYS} days.`
+            ? `Tap your collection day. We book a ${MONTHLY_PERIOD_DAYS} day period from there. Then tell us when and where we hand over the keys.`
+            : `Pick your days and times, and where we hand over the keys. Minimum ${MIN_RENTAL_DAYS} days.`
         }
       />
       {notice && (
@@ -677,13 +821,41 @@ function DatesStep({
             ))}
           </select>
 
+          <div className="mt-5 grid grid-cols-2 gap-3">
+            <TimeSelect id="pickup-time" label="Pickup time" value={pickupTime} onChange={onPickupTime} />
+            <TimeSelect id="return-time" label="Drop-off time" value={returnTime} onChange={onReturnTime} />
+          </div>
+
+          <div className="mt-5">
+            <Field id="dropoff-location" label="Drop-off location" error={dropoffError}>
+              <input
+                id="dropoff-location"
+                value={dropoff}
+                onChange={(e) => onDropoff(e.target.value)}
+                placeholder="Where should we pick up the car?"
+                autoComplete="street-address"
+                maxLength={200}
+                className={inputClass(!!dropoffError)}
+              />
+            </Field>
+            <p className="mt-1.5 text-xs text-cw-ink/60">
+              Your hotel, villa or an address. We come to you at the end of your rental.
+            </p>
+          </div>
+
           <div className="mt-6 rounded-xl bg-cw-mint-soft p-4 text-sm leading-relaxed text-cw-ink/80">
             {loading ? (
               'Checking which days are free…'
             ) : start && end ? (
               <>
-                <span className="font-semibold text-cw-navy">{fmtDay(start)}</span> pickup,{' '}
-                <span className="font-semibold text-cw-navy">{fmtDay(end)}</span> drop-off.
+                <span className="font-semibold text-cw-navy">
+                  {fmtDay(start)} at {fmtTime(pickupTime)}
+                </span>{' '}
+                pickup,{' '}
+                <span className="font-semibold text-cw-navy">
+                  {fmtDay(end)} at {fmtTime(returnTime)}
+                </span>{' '}
+                drop-off.
                 <span className="mt-1 block text-cw-ink/70">
                   {days} {days === 1 ? 'day' : 'days'}
                   {monthly ? ', at the flat monthly rate.' : '.'}
@@ -714,6 +886,39 @@ function DatesStep({
       ) : (
         <ContinueButton label="Continue" disabled={!canContinue || loading} onClick={onContinue} />
       )}
+    </div>
+  )
+}
+
+/** A handover time, from the fixed half-hour list the server also checks. */
+function TimeSelect({
+  id,
+  label,
+  value,
+  onChange,
+}: {
+  id: string
+  label: string
+  value: string
+  onChange: (t: string) => void
+}) {
+  return (
+    <div>
+      <label htmlFor={id} className="block font-display text-sm font-bold text-cw-navy">
+        {label}
+      </label>
+      <select
+        id={id}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="mt-2 w-full rounded-xl border-2 border-cw-navy/15 bg-white px-4 py-3 text-[15px] text-cw-ink transition-colors focus:border-cw-teal focus:outline-none"
+      >
+        {HANDOVER_TIMES.map((t) => (
+          <option key={t} value={t}>
+            {fmtTime(t)}
+          </option>
+        ))}
+      </select>
     </div>
   )
 }
@@ -980,11 +1185,18 @@ const inputClass = (invalid?: boolean) =>
 function DetailsStep({
   details,
   errors,
+  photo,
+  minExpiry,
+  onPhoto,
   onChange,
   onContinue,
 }: {
   details: Details
   errors: Partial<Record<keyof Details, string>>
+  photo: LicensePhoto
+  /** 'YYYY-MM-DD'. The license has to outlast the rental; the server checks too. */
+  minExpiry?: string
+  onPhoto: (file: File) => void
   onChange: (patch: Partial<Details>) => void
   onContinue: () => void
 }) {
@@ -1010,7 +1222,99 @@ function DetailsStep({
           </Field>
         </div>
       </div>
+
+      <div className="mt-8 border-t border-cw-navy/10 pt-7">
+        <p className="font-display text-sm font-bold uppercase tracking-widest text-cw-teal-dark">
+          Driver's license
+        </p>
+        <p className="mt-1.5 text-sm text-cw-ink/70">
+          We check it at handover. Sending it now means the keys are ready when you arrive.
+        </p>
+        {/* grid-cols-1, not the implicit column: a date input's intrinsic width
+            would otherwise stretch an `auto` track past the card on phones. */}
+        <div className="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2">
+          <Field id="bk-license" label="License number" error={errors.licenseNumber}>
+            <input id="bk-license" autoComplete="off" value={details.licenseNumber} onChange={(e) => onChange({ licenseNumber: e.target.value })} maxLength={40} className={inputClass(!!errors.licenseNumber)} />
+          </Field>
+          <Field id="bk-license-expiry" label="Expiration date" error={errors.licenseExpiry}>
+            <input id="bk-license-expiry" type="date" min={minExpiry} value={details.licenseExpiry} onChange={(e) => onChange({ licenseExpiry: e.target.value })} className={inputClass(!!errors.licenseExpiry)} />
+          </Field>
+          <div className="sm:col-span-2">
+            <LicensePhotoField photo={photo} error={errors.licensePhotoPath} onPhoto={onPhoto} />
+          </div>
+        </div>
+      </div>
+
       <ContinueButton label="Continue" onClick={onContinue} />
+    </div>
+  )
+}
+
+/** The license photo picker. A plain file input styled as a tile: on a phone
+ *  it offers the camera as well as the library, which is how most guests will
+ *  have their license to hand. */
+function LicensePhotoField({
+  photo,
+  error,
+  onPhoto,
+}: {
+  photo: LicensePhoto
+  error?: string
+  onPhoto: (file: File) => void
+}) {
+  const message = error ?? (photo.status === 'error' ? photo.message : undefined)
+  return (
+    <div>
+      <p id="bk-license-photo-label" className="font-display text-sm font-bold text-cw-navy">
+        Photo of your license
+      </p>
+      <label
+        htmlFor="bk-license-photo"
+        className={`mt-2 flex cursor-pointer items-center gap-4 rounded-xl border-2 border-dashed p-4 transition-colors hover:border-cw-teal ${
+          message ? 'border-[#b3271d]/60' : 'border-cw-navy/15'
+        }`}
+      >
+        {photo.status === 'uploading' || photo.status === 'done' ? (
+          <img src={photo.previewUrl} alt="Your license photo" className="h-16 w-24 shrink-0 rounded-lg object-cover" />
+        ) : (
+          <span className="flex h-16 w-24 shrink-0 items-center justify-center rounded-lg bg-cw-mint-soft" aria-hidden="true">
+            <svg viewBox="0 0 24 24" className="h-7 w-7 fill-none stroke-cw-teal-dark stroke-2">
+              <rect x="3" y="5" width="18" height="14" rx="2" />
+              <circle cx="9" cy="11" r="2" />
+              <path d="M13 10h5M13 14h5M6 16h6" strokeLinecap="round" />
+            </svg>
+          </span>
+        )}
+        <span className="min-w-0 text-sm">
+          <span className="block font-semibold text-cw-navy">
+            {photo.status === 'uploading'
+              ? 'Uploading…'
+              : photo.status === 'done'
+                ? 'Photo added'
+                : 'Add a photo'}
+          </span>
+          <span className="block truncate text-cw-ink/65">
+            {photo.status === 'uploading' || photo.status === 'done'
+              ? `${photo.name} · tap to replace`
+              : 'JPG, PNG, WEBP or HEIC, up to 10 MB. Stored privately.'}
+          </span>
+        </span>
+      </label>
+      <input
+        id="bk-license-photo"
+        type="file"
+        accept={Object.keys(LICENSE_PHOTO_TYPES).join(',')}
+        aria-labelledby="bk-license-photo-label"
+        className="sr-only"
+        disabled={photo.status === 'uploading'}
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          // Reset so picking the same file again after an error still fires.
+          e.target.value = ''
+          if (file) onPhoto(file)
+        }}
+      />
+      {message && <p className="mt-1.5 text-sm font-semibold text-[#b3271d]">{message}</p>}
     </div>
   )
 }
@@ -1021,6 +1325,9 @@ function ReviewStep({
   end,
   quote: q,
   locationLabel,
+  dropoff,
+  pickupTime,
+  returnTime,
   details,
   onEdit,
   onContinue,
@@ -1030,6 +1337,9 @@ function ReviewStep({
   end: Date
   quote: Quote
   locationLabel: string
+  dropoff: string
+  pickupTime: string
+  returnTime: string
   details: Details
   onEdit: (step: number) => void
   onContinue: () => void
@@ -1037,7 +1347,7 @@ function ReviewStep({
   const tier = DISCOUNT_TIERS.find((t) => t.pct === q.discountPct)
   return (
     <div>
-      <StepHeading title="Look it over" sub="Everything stays editable until you pay." />
+      <StepHeading title="Look it over" sub="Everything stays editable until you confirm." />
 
       <dl className="mt-7 divide-y divide-cw-navy/10">
         <ReviewRow label="Rental" onEdit={() => onEdit(STEP.TYPE)}>
@@ -1045,14 +1355,28 @@ function ReviewStep({
             ? `Monthly rate · ${q.days} day period`
             : `By the day · ${q.days} ${q.days === 1 ? 'day' : 'days'}`}
         </ReviewRow>
-        <ReviewRow label="Dates" onEdit={() => onEdit(STEP.DATES)}>
-          {fmtDay(start)} → {fmtDay(end)} · {locationLabel}
+        <ReviewRow label="Pickup" onEdit={() => onEdit(STEP.DATES)}>
+          {fmtDay(start)} at {fmtTime(pickupTime)} · {locationLabel}
+        </ReviewRow>
+        <ReviewRow label="Drop-off" onEdit={() => onEdit(STEP.DATES)}>
+          {fmtDay(end)} at {fmtTime(returnTime)} · {dropoff}
         </ReviewRow>
         <ReviewRow label="Car" onEdit={() => onEdit(STEP.CAR)}>
           {car.model}, {car.color.toLowerCase()} · {car.transmission}
         </ReviewRow>
         <ReviewRow label="Driver" onEdit={() => onEdit(STEP.DETAILS)}>
           {details.name} · {details.email} · {details.phone}
+          <span className="mt-1 block text-sm text-cw-ink/65">
+            {/* With the year: fmtDay drops it, and "valid until Jun 30" on a
+                December rental reads as already expired. */}
+            License {details.licenseNumber.trim()}, valid until{' '}
+            {fromKey(details.licenseExpiry).toLocaleDateString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric',
+            })}{' '}
+            · photo added
+          </span>
         </ReviewRow>
       </dl>
 
@@ -1083,13 +1407,18 @@ function ReviewStep({
             <dt>Pickup and drop-off</dt>
             <dd className="font-semibold text-cw-teal-dark">Free</dd>
           </div>
+          {/* No tax or fee lines, on purpose: the total is the whole price, and
+              nothing is added to it at the counter. */}
           <div className="flex justify-between border-t border-cw-navy/10 pt-2 text-base">
-            <dt className="font-display font-bold text-cw-navy">Total today</dt>
+            <dt className="font-display font-bold text-cw-navy">Total, paid at pickup</dt>
             <dd className="font-display font-extrabold text-cw-navy">
               {formatMoney(q.totalCents)}
             </dd>
           </div>
         </dl>
+        <p className="mt-3 text-xs text-cw-ink/65">
+          This is the full price. Nothing is added at pickup.
+        </p>
         {q.rentalType === 'daily' && q.discountPct === 0 && q.days < DISCOUNT_TIERS[2].minDays && (
           <p className="mt-3 text-xs text-cw-ink/65">
             Stay {DISCOUNT_TIERS[2].minDays} days or more and {DISCOUNT_TIERS[2].pct}% comes off
@@ -1098,7 +1427,7 @@ function ReviewStep({
         )}
       </div>
 
-      <ContinueButton label="Continue to payment" onClick={onContinue} />
+      <ContinueButton label="Continue" onClick={onContinue} />
     </div>
   )
 }
@@ -1148,12 +1477,14 @@ function PayStep({
 }) {
   return (
     <div>
+      {/* Sentoo is not connected (see src/lib/admin/payments.ts), so this step
+          reserves and says so. It must never read as if money moved. */}
       <StepHeading
-        title="Settle it with Sentoo"
-        sub="Curaçao's own payment platform: pay straight from your bank, no card needed."
+        title="Reserve your car"
+        sub="Nothing is charged online. You pay when we hand over the keys."
       />
       <div className="mt-7 rounded-xl border-2 border-cw-navy/10 p-5 text-center">
-        <p className="text-sm text-cw-ink/70">Total for the {car.model}</p>
+        <p className="text-sm text-cw-ink/70">Total for the {car.model}, paid at pickup</p>
         <p className="mt-1 font-display text-4xl font-extrabold text-cw-navy">
           {formatMoney(q.totalCents)}
         </p>
@@ -1192,8 +1523,8 @@ function PayStep({
           )}
         </button>
         <p className="mt-3 text-xs text-cw-ink/55">
-          Sentoo payment is not live yet. Your car is held and we settle up at pickup. Prefer
-          cash or card? Just say so on WhatsApp.
+          Confirming holds the car for your dates. Online payment with Sentoo is coming soon. Want
+          to arrange how you pay at pickup? Just say so on WhatsApp.
         </p>
       </div>
     </div>
@@ -1251,16 +1582,41 @@ function Confirmation({ confirmation: c }: { confirmation: Confirmed }) {
             </span>
           )}
         </ConfirmRow>
-        <ConfirmRow label="Status">
-          Reservation {c.bookingStatus} · payment {c.paymentStatus}
+        <ConfirmRow label="Status">{BOOKING_STATUS_LABEL[c.bookingStatus]}</ConfirmRow>
+        <ConfirmRow label="Payment">
+          {c.paymentStatus === 'paid' ? 'Paid, thank you' : 'Pay at pickup'}
+          {c.paymentStatus !== 'paid' && (
+            <span className="block text-xs text-cw-ink/60">Nothing has been charged online.</span>
+          )}
         </ConfirmRow>
       </dl>
 
+      {/* No "a copy is in your inbox" here: nothing sends one yet. Pointing at
+          the reference is the honest version until it does. */}
       <p className="mt-6 text-xs text-cw-ink/55">
-        A copy is on its way to {c.client.email}. Keep reference {reference} handy if you message us.
+        Keep reference {reference} handy, or screenshot this page. It is what we ask for if you
+        message us.
       </p>
+      <a
+        href={`${WHATSAPP_URL}?text=${encodeURIComponent(`Hi CW! About my reservation ${reference}`)}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mt-5 inline-block rounded-xl border-2 border-cw-navy/15 bg-white px-6 py-3 font-display text-[15px] font-bold text-cw-navy transition-colors hover:border-cw-teal hover:text-cw-teal"
+      >
+        Message us on WhatsApp
+      </a>
     </div>
   )
+}
+
+/** How a booking status reads to a guest. A fresh booking is `pending` until we
+ *  confirm it on WhatsApp, which is exactly what the screen above promises. */
+const BOOKING_STATUS_LABEL: Record<Confirmed['bookingStatus'], string> = {
+  pending: 'Reserved, confirmation on WhatsApp shortly',
+  confirmed: 'Confirmed',
+  active: 'On the road',
+  completed: 'Completed',
+  cancelled: 'Cancelled',
 }
 
 function ConfirmRow({ label, children }: { label: string; children: React.ReactNode }) {

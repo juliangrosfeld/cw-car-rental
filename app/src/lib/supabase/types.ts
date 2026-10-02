@@ -151,6 +151,8 @@ export interface Database {
           license_number: string | null;
           /** 'YYYY-MM-DD' */
           license_expiry: string | null;
+          /** Object key in the private `license-photos` bucket (0007). */
+          license_photo_path: string | null;
           date_of_birth: string | null;
           country_of_residence: string | null;
           created_at: string;
@@ -163,6 +165,7 @@ export interface Database {
           email: string;
           license_number?: string | null;
           license_expiry?: string | null;
+          license_photo_path?: string | null;
           date_of_birth?: string | null;
           country_of_residence?: string | null;
         };

@@ -45,11 +45,11 @@
  *   loop stays safe under a race.
  */
 import { supabaseAdmin } from "../supabase/admin.server";
+import { LICENSE_BUCKET, LICENSE_PHOTO_PATH_RE, LICENSE_PHOTO_TYPES } from "./license";
 import type { Booking, Car, Client, NewBooking, Vehicle } from "../supabase/types";
 import {
-  PICKUP_TIME,
-  RETURN_TIME,
   addDaysToKey,
+  isHandoverTime,
   quoteRental,
   rentalDays,
   resolveWindow,
@@ -68,6 +68,11 @@ export interface RentalWindow {
   pickupDate: string;
   /** 'YYYY-MM-DD' */
   returnDate: string;
+  /** 'HH:MM:SS', one of HANDOVER_TIMES. The guest's own choice, written to the
+   *  booking row and used for the overlap check below. */
+  pickupTime: string;
+  /** 'HH:MM:SS', one of HANDOVER_TIMES. */
+  returnTime: string;
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -84,6 +89,17 @@ export function assertValidWindow(w: RentalWindow): void {
       throw new InvalidRentalWindowError(`${field} must be YYYY-MM-DD, got "${value}"`);
     }
   }
+  for (const [field, value] of [
+    ["pickupTime", w.pickupTime],
+    ["returnTime", w.returnTime],
+  ] as const) {
+    if (!isHandoverTime(value)) {
+      throw new InvalidRentalWindowError(`${field} is not a handover time we offer, got "${value}"`);
+    }
+  }
+  // Dates strictly ordered also guarantees return_at > pickup_at whatever the
+  // two times are, which is what keeps bookings_return_after_pickup (and with
+  // it a non-empty range for the exclusion constraint) satisfied.
   if (w.returnDate <= w.pickupDate) {
     throw new InvalidRentalWindowError(
       `return date (${w.returnDate}) must be after pickup date (${w.pickupDate})`,
@@ -142,14 +158,19 @@ async function loadRoadworthyVehicles(listingId?: string): Promise<CandidateVehi
 /** Vehicle ids holding a booking that overlaps this window. Half-open overlap:
  *  existing.pickup < new.return AND existing.return > new.pickup — the same
  *  test the exclusion constraint applies, against the same generated columns,
- *  so this read and that write can only disagree by timing. */
+ *  so this read and that write can only disagree by timing.
+ *
+ *  Both sides are real per-booking times. The existing booking's are already
+ *  baked into its generated pickup_at / return_at (date + its own stored
+ *  time); the new booking's come from the guest's choice in `window`, the same
+ *  values createBooking then writes. Nothing here assumes a shared time. */
 async function vehiclesTakenIn(window: RentalWindow): Promise<Set<string>> {
   const { data, error } = await supabaseAdmin()
     .from("bookings")
     .select("vehicle_id")
     .neq("booking_status", OCCUPYING)
-    .lt("pickup_at", toTimestamp(window.returnDate, RETURN_TIME))
-    .gt("return_at", toTimestamp(window.pickupDate, PICKUP_TIME));
+    .lt("pickup_at", toTimestamp(window.returnDate, window.returnTime))
+    .gt("return_at", toTimestamp(window.pickupDate, window.pickupTime));
 
   if (error) throw new Error(`Failed to load bookings: ${error.message}`);
   return new Set((data ?? []).map((b) => b.vehicle_id));
@@ -293,6 +314,7 @@ async function findOrCreateClient(input: {
   fullName: string;
   email: string;
   phone: string;
+  license: DriverLicense;
 }): Promise<Client> {
   const db = supabaseAdmin();
   const email = input.email.trim().toLowerCase();
@@ -306,7 +328,29 @@ async function findOrCreateClient(input: {
     .maybeSingle();
 
   if (lookupError) throw new Error(`Failed to look up client: ${lookupError.message}`);
-  if (existing) return existing;
+
+  const licenseColumns = {
+    license_number: input.license.number.trim(),
+    license_expiry: input.license.expiry,
+    license_photo_path: input.license.photoPath,
+  };
+
+  // The one exception to "reuse as-is": the license. Name and phone stay as
+  // first written (see above), but the license is the document THIS rental is
+  // driven on, and a returning guest may well have renewed it since. Keeping
+  // the stale one would leave the CRM holding a license that no longer proves
+  // anything. The trade-off is the shared-address case above: a second driver
+  // booking under the same email replaces the first one's license on file.
+  if (existing) {
+    const { data: updated, error: updateError } = await db
+      .from("clients")
+      .update(licenseColumns)
+      .eq("id", existing.id)
+      .select()
+      .single();
+    if (updateError) throw new Error(`Failed to save license: ${updateError.message}`);
+    return updated;
+  }
 
   const { data, error } = await db
     .from("clients")
@@ -314,6 +358,7 @@ async function findOrCreateClient(input: {
       full_name: input.fullName.trim(),
       email,
       phone: input.phone.trim(),
+      ...licenseColumns,
     })
     .select()
     .single();
@@ -322,12 +367,43 @@ async function findOrCreateClient(input: {
   return data;
 }
 
+/**
+ * A one-time upload slot: a fresh random key plus the token that lets the
+ * browser write exactly that object, once. The key is chosen here, never by
+ * the browser, so an upload cannot overwrite another guest's photo.
+ */
+export async function createLicenseUploadTicket(
+  contentType: string,
+): Promise<{ path: string; token: string }> {
+  const ext = LICENSE_PHOTO_TYPES[contentType];
+  if (!ext) throw new Error(`Unsupported license photo type: ${contentType}`);
+
+  const path = `licenses/${crypto.randomUUID()}.${ext}`;
+  const { data, error } = await supabaseAdmin()
+    .storage.from(LICENSE_BUCKET)
+    .createSignedUploadUrl(path);
+  if (error) throw new Error(`Failed to prepare license upload: ${error.message}`);
+  return { path: data.path, token: data.token };
+}
+
+export interface DriverLicense {
+  number: string;
+  /** 'YYYY-MM-DD' */
+  expiry: string;
+  /** Object key in LICENSE_BUCKET, as issued by createLicenseUploadTicket. */
+  photoPath: string;
+}
+
 export interface CreateBookingInput {
   rentalType: RentalType;
   /** 'YYYY-MM-DD' */
   pickupDate: string;
   /** 'YYYY-MM-DD'. Ignored for a monthly rental, whose period is derived here. */
   returnDate?: string | null;
+  /** 'HH:MM:SS', one of HANDOVER_TIMES. */
+  pickupTime: string;
+  /** 'HH:MM:SS', one of HANDOVER_TIMES. */
+  returnTime: string;
   carId: string;
   fullName: string;
   email: string;
@@ -336,6 +412,7 @@ export interface CreateBookingInput {
   returnLocation: string;
   flightNumber?: string | null;
   specialRequests?: string | null;
+  license: DriverLicense;
 }
 
 export interface BookingConfirmation {
@@ -368,7 +445,7 @@ export type CreateBookingResult =
   | { ok: true; confirmation: BookingConfirmation }
   | {
       ok: false;
-      reason: "car_not_bookable" | "date_conflict" | QuoteRefusal;
+      reason: "car_not_bookable" | "date_conflict" | "license_invalid" | QuoteRefusal;
       message: string;
     };
 
@@ -431,9 +508,37 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
   // picks a start day and the period is fixed at MONTHLY_PERIOD_DAYS. Doing this
   // before anything else means the dates that are validated, the dates that are
   // priced and the dates that are written are the same three dates.
-  const window = resolveWindow(input.rentalType, input.pickupDate, input.returnDate);
+  const window = resolveWindow(
+    input.rentalType,
+    input.pickupDate,
+    input.returnDate,
+    input.pickupTime,
+    input.returnTime,
+  );
   assertValidWindow(window);
   const db = supabaseAdmin();
+
+  // 0. The license has to cover the whole rental, and its photo has to be one
+  //    this server issued AND that actually arrived in the bucket. Checked
+  //    before anything is written so a refusal leaves no client row behind.
+  if (input.license.expiry < window.returnDate) {
+    return {
+      ok: false,
+      reason: "license_invalid",
+      message: "Your license needs to be valid until the car is back. Check the expiration date.",
+    };
+  }
+  if (!LICENSE_PHOTO_PATH_RE.test(input.license.photoPath)) {
+    return { ok: false, reason: "license_invalid", message: "Please upload your license photo again." };
+  }
+  // exists() answers false for a missing object and throws on anything else,
+  // so a Storage outage surfaces as an error rather than as "upload again".
+  const { data: photoThere } = await db.storage
+    .from(LICENSE_BUCKET)
+    .exists(input.license.photoPath);
+  if (!photoThere) {
+    return { ok: false, reason: "license_invalid", message: "Please upload your license photo again." };
+  }
 
   // 1. Authoritative price source. Nothing the browser sent is trusted here.
   //    The LISTING carries the rates; whether anything is actually bookable is
@@ -483,6 +588,7 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
     fullName: input.fullName,
     email: input.email,
     phone: input.phone,
+    license: input.license,
   });
 
   // 3. The booking, against a specific physical car. Which one is decided here
@@ -498,9 +604,9 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
     client_id: client.id,
     car_id: car.id,
     pickup_date: window.pickupDate,
-    pickup_time: PICKUP_TIME,
+    pickup_time: window.pickupTime,
     return_date: window.returnDate,
-    return_time: RETURN_TIME,
+    return_time: window.returnTime,
     pickup_location: input.pickupLocation,
     return_location: input.returnLocation,
     flight_number: input.flightNumber?.trim() || null,
