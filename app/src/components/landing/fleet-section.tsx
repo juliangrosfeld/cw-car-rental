@@ -6,7 +6,7 @@ import { CURRENCY_CODE } from '../../lib/money'
 import { DISCOUNT_TIER_SUMMARY, MIN_RENTAL_DAYS } from '../../lib/booking/rental'
 
 /**
- * The fleet, a single aligned grid: five identical cards on an even gutter.
+ * The fleet, a single aligned grid: identical cards on an even gutter.
  * Every card shares the same image crop, the same body layout and the same
  * height, so nothing steps out of line. The flagship reads through a badge
  * pinned over its photo (an overlay), never through a taller or wider card, so
@@ -14,12 +14,14 @@ import { DISCOUNT_TIER_SUMMARY, MIN_RENTAL_DAYS } from '../../lib/booking/rental
  * safe) and tilt gently under a fine pointer.
  */
 
-const ACCENT_BAR: Record<Vehicle['accent'], string> = {
-  peach: 'bg-cw-peach',
-  yellow: 'bg-cw-yellow',
-  mint: 'bg-cw-mint',
-  pink: 'bg-cw-pink',
-  teal: 'bg-cw-teal',
+/** The paint colour behind each colorNote, for the dot beside it. Keyed by the
+ *  label rather than added to Vehicle so the fleet data stays as it is; a car
+ *  in a colour missing here renders a hollow ring, never a wrong colour. */
+const SWATCH: Record<string, string> = {
+  Grey: '#9a9ea4',
+  Silver: '#cfd3d8',
+  Red: '#c8102e',
+  Black: '#1c1f24',
 }
 
 export default function FleetSection() {
@@ -79,7 +81,7 @@ export default function FleetSection() {
           </p>
         </div>
 
-        <div className="mt-16 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mx-auto mt-16 grid max-w-[960px] gap-6 md:grid-cols-2">
           {FLEET.map((vehicle) => (
             <FleetCard key={vehicle.id} vehicle={vehicle} />
           ))}
@@ -141,10 +143,22 @@ function FleetCard({ vehicle }: { vehicle: Vehicle }) {
       </div>
 
       <div className="flex flex-1 flex-col p-5">
-        <div className="flex items-baseline justify-between gap-3">
-          <h3 className="font-display text-lg font-bold text-cw-navy">{vehicle.name}</h3>
-          <span className="shrink-0 text-sm font-semibold text-cw-ink/60">{vehicle.colorNote}</span>
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="font-display text-xl font-extrabold tracking-tight text-cw-navy">
+            {vehicle.name}
+          </h3>
+          <span className="flex shrink-0 items-center gap-2 text-sm text-cw-ink/75">
+            <span
+              aria-hidden="true"
+              className="h-3 w-3 rounded-full ring-1 ring-cw-ink/15"
+              style={{ backgroundColor: SWATCH[vehicle.colorNote] ?? 'transparent' }}
+            />
+            {vehicle.colorNote}
+          </span>
         </div>
+        <p className="mt-1 text-sm font-semibold text-cw-teal">
+          {vehicle.transmission} · {vehicle.seats} seats
+        </p>
         <p className="mt-2 line-clamp-2 min-h-[2.6em] text-sm leading-relaxed text-cw-ink/80">
           {vehicle.tagline}
         </p>
@@ -152,26 +166,33 @@ function FleetCard({ vehicle }: { vehicle: Vehicle }) {
         <div className="mt-auto pt-5">
           {/* Two prices, one product each: the daily rate a week's holiday is
               billed at, and the flat monthly rate that is NOT thirty of them. */}
-          <div className="flex items-end justify-between gap-3">
-            <p className="text-cw-ink/85">
-              <span className="font-display text-xl font-extrabold text-cw-navy">
-                {CURRENCY_CODE} {vehicle.pricePerDay}
-              </span>{' '}
-              <span className="text-sm">per day</span>
-              <span className="mt-0.5 block text-sm text-cw-ink/70">
-                <span className="font-semibold text-cw-navy">
+          <dl className="grid grid-cols-2 border-t border-cw-ink/10 pt-4">
+            <div className="pr-3">
+              <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-cw-ink/60">
+                Daily rate
+              </dt>
+              <dd className="mt-1 flex flex-wrap items-baseline gap-x-1 text-cw-ink/70">
+                <span className="font-display text-[17px] font-extrabold text-cw-navy lg:text-xl">
+                  {CURRENCY_CODE} {vehicle.pricePerDay}
+                </span>
+                <span className="whitespace-nowrap text-[13px] lg:text-sm">/ day</span>
+              </dd>
+            </div>
+            <div className="border-l border-cw-ink/10 pl-3">
+              <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-cw-ink/60">
+                Monthly rate
+              </dt>
+              <dd className="mt-1 flex flex-wrap items-baseline gap-x-1 text-cw-ink/70">
+                <span className="font-display text-[17px] font-extrabold text-cw-navy lg:text-xl">
                   {CURRENCY_CODE} {vehicle.pricePerMonth.toLocaleString('en-US')}
-                </span>{' '}
-                per month
-              </span>
-            </p>
-            <span className="shrink-0 rounded-full bg-cw-teal-soft px-3 py-1 text-xs font-semibold text-cw-teal-dark">
-              {vehicle.transmission} · {vehicle.seats} seats
-            </span>
-          </div>
+                </span>
+                <span className="whitespace-nowrap text-[13px] lg:text-sm">/ month</span>
+              </dd>
+            </div>
+          </dl>
 
-          {/* "Book this car" — the label crossfades to the invitation, over
-              this car's own accent bar.
+          {/* "Book this car" — the label crossfades to the invitation, inside
+              a full-width navy button with the arrow pinned to its right edge.
 
               Both labels are stacked in ONE grid cell rather than sequenced in
               a scrolling column. The previous version slid a two-line stack
@@ -189,7 +210,7 @@ function FleetCard({ vehicle }: { vehicle: Vehicle }) {
           <Link
             to="/booking"
             search={{ car: vehicle.id }}
-            className="mt-4 inline-block font-display text-[15px] font-bold text-cw-navy"
+            className="mt-5 flex w-full items-center justify-between gap-3 rounded-lg bg-cw-navy px-5 py-3.5 font-display text-[15px] font-bold text-white transition-colors duration-200 hover:bg-cw-navy/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cw-teal"
           >
             <span className="grid">
               <span className="col-start-1 row-start-1 transition-opacity duration-200 ease-out group-hover:opacity-0">
@@ -197,12 +218,23 @@ function FleetCard({ vehicle }: { vehicle: Vehicle }) {
               </span>
               <span
                 aria-hidden="true"
-                className="col-start-1 row-start-1 text-cw-teal-dark opacity-0 transition-opacity duration-200 ease-out group-hover:opacity-100"
+                className="col-start-1 row-start-1 text-cw-mint opacity-0 transition-opacity duration-200 ease-out group-hover:opacity-100"
               >
                 Ban, let&apos;s go →
               </span>
             </span>
-            <span className={`mt-1 block h-[3px] w-16 rounded-full ${ACCENT_BAR[vehicle.accent]}`} />
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 24 24"
+              className="h-5 w-5 shrink-0 text-cw-yellow"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.25"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M4 12h15M13 6l6 6-6 6" />
+            </svg>
           </Link>
         </div>
       </div>
