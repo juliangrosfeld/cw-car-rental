@@ -6,13 +6,13 @@ import { VALUES } from '../../content/brand'
  * it needs no JS, survives screenshots (every chapter is in normal flow), and
  * degrades to plain stacked blocks by itself.
  *
- * Each chapter is an island photo under a 50% wash of its brand colour, rather
+ * Each chapter is an island photo under a light 25% wash of its brand colour, rather
  * than the flat colour block it used to be. Layers, in order:
  *   1. the photo, object-cover;
  *   2. the brand colour at WASH;
  *   3. a soft neutral bloom behind the copy. It is deliberately colourless: at
- *      50% the photo carries real detail through, and the navy type needs a
- *      lighter ground under it without pushing the colour past the 50% the
+ *      25% the photo carries real detail through, and the navy type needs a
+ *      lighter ground under it without pushing the colour past the 25% the
  *      chapter is meant to read at.
  *
  * Chapters are h-lvh, not h-dvh: dvh tracks the mobile toolbar, so every
@@ -26,7 +26,7 @@ import { VALUES } from '../../content/brand'
  */
 
 /** Opacity of the brand-colour wash over each photo. */
-const WASH = 0.5
+const WASH = 0.25
 export default function ValuesStack() {
   return (
     <section aria-label="What we stand for">
@@ -57,7 +57,7 @@ export default function ValuesStack() {
             className="absolute inset-0"
             style={{
               background:
-                'radial-gradient(ellipse 74% 54% at 50% 50%, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.3) 46%, rgba(255,255,255,0) 78%)',
+                'radial-gradient(ellipse 74% 54% at 50% 50%, rgba(255,255,255,0.42) 0%, rgba(255,255,255,0.24) 46%, rgba(255,255,255,0) 78%)',
             }}
           />
 
