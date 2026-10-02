@@ -105,44 +105,7 @@ export default function Hero() {
         />
       )}
 
-      {/* 3. Scrim. The footage is bright — sunlit scrub and turquoise reef — so
-             legibility is bought here, not with text shadows alone:
-             a navy wash overall, a deep foot at the bottom of frame, and a top
-             band so the transparent nav's white marks hold over the water. The
-             copy now sits mid-frame, where this gradient is clear, so its
-             contrast comes from the left-hand wash below instead.
-
-             The TOP band is deliberately untouched. The nav's worst case is
-             3.9:1, already under AA for its size, and that is the bright water
-             behind it rather than the scrim: lightening the band costs another
-             0.1 and buys nothing visible. If the nav is ever fixed properly it
-             wants a solid backdrop, not a deeper wash here. */}
-      <div aria-hidden="true" className="absolute inset-0 bg-cw-navy/12" />
-      <div
-        aria-hidden="true"
-        className="absolute inset-0"
-        style={{
-          background:
-            'linear-gradient(180deg, rgba(2,48,71,0.55) 0%, rgba(2,48,71,0.14) 20%, rgba(2,48,71,0) 40%, rgba(2,48,71,0.46) 74%, rgba(2,48,71,0.8) 100%)',
-        }}
-      />
-      {/* The pull from the left, back now that the copy sits mid-frame on the
-          left instead of down in the dark foot of the scrim above. Sized by
-          measurement, not taste: stepping through the whole loop at five md+
-          viewports, the body copy fell to 3.3:1 without it and clears 5.1:1
-          with it. The heavier washes tried bought headroom nobody needs and
-          took more of the reef, which this one still keeps at ~73% brightness.
-          Phones don't need it: the copy there already clears 5.1:1. */}
-      <div
-        aria-hidden="true"
-        className="absolute inset-0 hidden md:block"
-        style={{
-          background:
-            'linear-gradient(90deg, rgba(2,48,71,0.5) 0%, rgba(2,48,71,0.14) 34%, rgba(2,48,71,0) 62%)',
-        }}
-      />
-
-      {/* 4. Copy. Vertically centred, held to the left of frame. The drone
+      {/* 3. Copy. Vertically centred, held to the left of frame. The drone
              tracks the car, so it sits in one column for the whole loop
              (measured: x 49-55%, y 39-56% of the source frame); from md up the
              copy stays left of that column at every height, which is the only
