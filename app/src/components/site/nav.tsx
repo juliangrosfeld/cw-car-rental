@@ -3,11 +3,11 @@ import { Link, useRouterState } from '@tanstack/react-router'
 
 /**
  * Fixed nav. Over the landing hero it starts transparent with white marks and
- * eases into the CW teal-to-mint gradient once the atmosphere scrolls away (a
- * real transition, not a hard cut). Inner pages start on the gradient.
+ * eases into solid white, the same white as the logo plate, once the
+ * atmosphere scrolls away (a real transition, not a hard cut). Inner pages
+ * start on the white.
  *
- * In the gradient state every mark is navy (navy reads cleanly across the whole
- * teal->mint span); over the dark hero every mark is white.
+ * In the white state every mark is navy; over the dark hero every mark is white.
  */
 export default function Nav() {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
@@ -21,7 +21,7 @@ export default function Nav() {
     const check = () => {
       raf = 0
       // The landing hero is one viewport of looping video: stay transparent
-      // over the footage, warm into the gradient just before it scrolls away.
+      // over the footage, turn white just before it scrolls away.
       setScrolled(window.scrollY > window.innerHeight * 0.7)
     }
     const onScroll = () => {
@@ -45,18 +45,22 @@ export default function Nav() {
     <header
       className={`fixed inset-x-0 top-0 z-50 transition-[background,box-shadow] duration-500 [view-transition-name:site-nav] ${
         solid
-          ? 'bg-gradient-to-r from-cw-teal via-cw-teal to-cw-mint shadow-[0_8px_30px_rgba(2,48,71,0.18)]'
+          ? 'bg-white shadow-[0_8px_30px_rgba(2,48,71,0.18)]'
           : 'bg-transparent'
       }`}
     >
       <nav className="mx-auto flex h-[72px] max-w-[1160px] items-center justify-between px-5 md:px-8">
         <Link to="/" aria-label="CW Car Rental, home" className="flex items-center">
           {/* The CW lockup, used as-is: never stretched, recolored, or redrawn.
-              Its ink is dark teal on transparent, which would sink into both
-              nav states (teal->mint gradient, dark hero footage), so it rides a
-              white plate rather than being knocked out to white. The plate is
-              the contrast, the mark stays the mark. */}
-          <span className="flex items-center rounded-xl bg-white px-2.5 py-1.5 shadow-[0_2px_12px_rgba(2,48,71,0.16)]">
+              Its ink is dark teal on transparent, which would sink into the
+              dark hero footage, so it rides a white plate rather than being
+              knocked out to white. On the white nav the plate drops its shadow
+              and simply merges into the bar. */}
+          <span
+            className={`flex items-center rounded-xl bg-white px-2.5 py-1.5 transition-shadow duration-500 ${
+              solid ? '' : 'shadow-[0_2px_12px_rgba(2,48,71,0.16)]'
+            }`}
+          >
             <img
               src="/assets/cw-logo-lockup-480.png"
               alt=""
@@ -97,7 +101,7 @@ export default function Nav() {
       {/* Mobile menu */}
       <div
         className={`grid overflow-hidden transition-[grid-template-rows] duration-400 md:hidden ${
-          open ? 'grid-rows-[1fr] bg-gradient-to-b from-cw-teal to-cw-mint backdrop-blur-md' : 'grid-rows-[0fr]'
+          open ? 'grid-rows-[1fr] bg-white' : 'grid-rows-[0fr]'
         }`}
       >
         <div className="min-h-0">
@@ -196,8 +200,8 @@ function MobileAnchor({
 }
 
 /**
- * The nav's booking CTA. On the gradient it fills navy (a firm block against
- * the teal->mint wash); over the dark hero it fills teal like the hero CTAs.
+ * The nav's booking CTA. On the white nav it fills navy (a firm block against
+ * the white); over the dark hero it fills teal like the hero CTAs.
  */
 function NavCta({ dark }: { dark: boolean }) {
   return (
