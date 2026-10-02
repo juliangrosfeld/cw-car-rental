@@ -3,11 +3,11 @@ import { FLEET, FOUNDER_NAME, FOUNDER_QUOTE } from '../../content/brand'
 
 /**
  * Founder teaser, off-grid: layered crop frames on the left (brand color
- * fields under the flagship photo, until real portraits land), the quote and
+ * fields under the first car in FLEET, until real portraits land), the quote and
  * a viewfinder link on the right.
  */
 export default function FounderTeaser() {
-  const flagship = FLEET[0]
+  const featured = FLEET[0]
 
   return (
     <section className="overflow-hidden bg-white">
@@ -17,8 +17,8 @@ export default function FounderTeaser() {
           <div className="absolute -left-5 top-8 h-[78%] w-[86%] -rotate-3 rounded-xl bg-cw-mint" aria-hidden="true" />
           <div className="absolute -right-4 -top-4 h-[70%] w-[80%] rotate-2 rounded-xl bg-cw-peach" aria-hidden="true" />
           <img
-            src={flagship.photo}
-            alt="The red Hyundai Venue, CW's flagship"
+            src={featured.photo}
+            alt={`The ${featured.colorNote.toLowerCase()} ${featured.name}${featured.flagship ? ", CW's flagship" : ''}`}
             loading="lazy"
             decoding="async"
             className="cw-shadow-lift relative rounded-xl"

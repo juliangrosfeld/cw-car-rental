@@ -98,19 +98,6 @@ export interface Vehicle {
  *  at quote time; see DISCOUNT_TIERS in src/lib/booking/rental.ts. */
 export const FLEET: Vehicle[] = [
   {
-    id: 'hyundai-venue-red',
-    name: 'Hyundai Venue',
-    colorNote: 'Red',
-    tagline: 'Our flagship, the red SUV from the hero. Compact outside, easy everywhere.',
-    seats: 5,
-    transmission: 'Automatic',
-    pricePerDay: 100,
-    pricePerMonth: 2600,
-    flagship: true,
-    photo: '/assets/fleet/hyundai-venue-red-900.webp',
-    accent: 'peach',
-  },
-  {
     id: 'mazda-3-grey',
     name: 'Mazda 3',
     colorNote: 'Grey',
