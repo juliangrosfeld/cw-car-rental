@@ -35,9 +35,10 @@ import {
   type RentalType,
 } from '../../lib/booking/rental'
 import {
-  BOOKING_STATUS_LABEL,
+  FULL_PRICE_NOTE,
+  bookingReference,
   confirmationCopy,
-  paymentLabel,
+  confirmationRows,
 } from '../../lib/booking/confirmation-copy'
 import { CURRENCY_CODE } from '../../lib/money'
 import { supabase } from '../../lib/supabase/client'
@@ -1505,9 +1506,7 @@ function ReviewStep({
             </dd>
           </div>
         </dl>
-        <p className="mt-3 text-xs text-cw-ink/65">
-          This is the full price. Nothing is added at pickup.
-        </p>
+        <p className="mt-3 text-xs text-cw-ink/65">{FULL_PRICE_NOTE}</p>
         {q.rentalType === 'daily' && q.discountPct === 0 && q.days < DISCOUNT_TIERS[2].minDays && (
           <p className="mt-3 text-xs text-cw-ink/65">
             Stay {DISCOUNT_TIERS[2].minDays} days or more and {DISCOUNT_TIERS[2].pct}% comes off
@@ -1621,10 +1620,9 @@ function PayStep({
 }
 
 function Confirmation({ confirmation: c }: { confirmation: Confirmed }) {
-  /** Short, readable handle for WhatsApp — the full uuid is the real key. */
-  const reference = c.bookingId.slice(0, 8).toUpperCase()
-  // The words come from confirmation-copy, which the confirmation email will
-  // share, so the screen and the inbox can never disagree.
+  const reference = bookingReference(c.bookingId)
+  // The words AND the rows come from confirmation-copy, which the confirmation
+  // email shares, so the screen and the inbox can never disagree.
   const copy = confirmationCopy({
     fullName: c.client.full_name,
     carModel: c.car.model,
@@ -1635,7 +1633,6 @@ function Confirmation({ confirmation: c }: { confirmation: Confirmed }) {
     pickupLocation: c.pickupLocation,
     reference,
   })
-  const payment = paymentLabel(c.paymentStatus)
 
   return (
     <div className="text-center">
@@ -1652,40 +1649,23 @@ function Confirmation({ confirmation: c }: { confirmation: Confirmed }) {
       </p>
 
       <dl className="mx-auto mt-7 max-w-[26rem] divide-y divide-cw-navy/10 text-left">
-        <ConfirmRow label="Reference">{reference}</ConfirmRow>
-        <ConfirmRow label="Car">
-          {c.car.model}, {c.car.color.toLowerCase()} · {c.car.transmission} · {c.car.seats} seats
-        </ConfirmRow>
-        <ConfirmRow label="Pickup">
-          {fmtDay(fromKey(c.pickupDate))} at {c.pickupTime.slice(0, 5)} · {c.pickupLocation}
-        </ConfirmRow>
-        <ConfirmRow label="Drop-off">
-          {fmtDay(fromKey(c.returnDate))} at {c.returnTime.slice(0, 5)} · {c.returnLocation}
-        </ConfirmRow>
-        {c.flightNumber && <ConfirmRow label="Flight">{c.flightNumber}</ConfirmRow>}
-        <ConfirmRow label="Rental">
-          {c.rentalType === 'monthly'
-            ? `Monthly rate · ${c.days} day period`
-            : `By the day · ${c.days} ${c.days === 1 ? 'day' : 'days'}`}
-        </ConfirmRow>
-        <ConfirmRow label="Total">
-          {formatMoney(c.totalCents)}
-          <span className="block text-xs text-cw-ink/60">
-            {c.rentalType === 'monthly'
-              ? 'flat monthly rate'
-              : `${formatMoney(c.rateCents)} × ${c.days} ${c.days === 1 ? 'day' : 'days'}`}
-          </span>
-          {c.discountCents > 0 && (
-            <span className="block text-xs font-semibold text-cw-teal-dark">
-              {c.discountPct}% long stay discount, {formatMoney(c.discountCents)} off
-            </span>
-          )}
-        </ConfirmRow>
-        <ConfirmRow label="Status">{BOOKING_STATUS_LABEL[c.bookingStatus]}</ConfirmRow>
-        <ConfirmRow label="Payment">
-          {payment.label}
-          {payment.note && <span className="block text-xs text-cw-ink/60">{payment.note}</span>}
-        </ConfirmRow>
+        {confirmationRows(c).map((row) => (
+          <ConfirmRow key={row.label} label={row.label}>
+            {row.value}
+            {row.details.map((d) => (
+              <span
+                key={d.text}
+                className={
+                  d.emphasis
+                    ? 'block text-xs font-semibold text-cw-teal-dark'
+                    : 'block text-xs text-cw-ink/60'
+                }
+              >
+                {d.text}
+              </span>
+            ))}
+          </ConfirmRow>
+        ))}
       </dl>
 
       {/* No "a copy is in your inbox" here: nothing sends one yet. Pointing at

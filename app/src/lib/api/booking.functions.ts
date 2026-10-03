@@ -9,6 +9,7 @@
  * wizard is the intended caller, but anything on the internet can POST to them.
  */
 import { createServerFn } from "@tanstack/react-start";
+import { getRequestUrl } from "@tanstack/react-start/server";
 import { z } from "zod";
 
 import {
@@ -31,6 +32,7 @@ import {
   toKey,
 } from "../booking/rental";
 import { LICENSE_PHOTO_PATH_RE, LICENSE_PHOTO_TYPES } from "../booking/license";
+import { notifyNewBooking } from "../email/notify-booking.server";
 import type { Car } from "../supabase/types";
 
 /** The car fields safe to serialise to the browser. `cars` is anon-readable in
@@ -203,15 +205,37 @@ export const createLicenseUpload = createServerFn({ method: "POST" })
 export const submitBooking = createServerFn({ method: "POST" })
   .inputValidator(submitSchema)
   .handler(async ({ data }) => {
+    let result: Awaited<ReturnType<typeof createBooking>>;
     try {
-      return await createBooking(data);
+      result = await createBooking(data);
     } catch (error) {
       if (error instanceof InvalidRentalWindowError) {
         return { ok: false as const, reason: "date_conflict" as const, message: error.message };
       }
       throw error;
     }
+
+    // The car is held at this point; email is secondary. notifyNewBooking never
+    // throws and logs its own failures, so nothing past here can turn a booking
+    // that exists into an error the guest sees.
+    if (result.ok) {
+      await notifyNewBooking(result.confirmation, {
+        origin: requestOrigin(),
+        specialRequests: data.specialRequests ?? null,
+      });
+    }
+    return result;
   });
+
+/** The site's own origin, for the admin link in Clay's alert. Null rather than
+ *  a guess if it cannot be read; the alert then says where to look instead. */
+function requestOrigin(): string | null {
+  try {
+    return getRequestUrl().origin;
+  } catch {
+    return null;
+  }
+}
 
 /** Re-read a confirmation by id, so reloading the page does not lose it. */
 export const fetchBookingConfirmation = createServerFn({ method: "POST" })
