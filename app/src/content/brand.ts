@@ -19,13 +19,17 @@ export const FOUNDER_NAME = 'Clay Winklaar'
 export const FOUNDER_QUOTE =
   'I always loved seeing people enjoy the place I call home. Helping them explore it, that means a lot to me.'
 
-/** Contact placeholders. Confirm the real ones with Clay before launch. */
+/**
+ * Real contact details, confirmed with Clay. `phone` is the display form;
+ * `whatsapp` is the same number in E.164, and wa.me links strip it to digits.
+ * There is no Facebook page, so none is listed. `email` is still unconfirmed:
+ * cwcarrental.com was not registered as of Oct 2026, so it cannot receive mail.
+ */
 export const CONTACT = {
   email: 'hello@cwcarrental.com',
-  phone: '+599 9 123 4567',
-  whatsapp: '+59991234567',
-  instagram: 'https://instagram.com/cwcarrental',
-  facebook: 'https://facebook.com/cwcarrental',
+  phone: '+599 9 527 8555',
+  whatsapp: '+59995278555',
+  instagram: 'https://www.instagram.com/cw_car_rentals/',
 }
 
 export interface Value {
