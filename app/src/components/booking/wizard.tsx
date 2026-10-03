@@ -16,6 +16,7 @@ import {
 } from '../../lib/booking/license'
 import {
   DISCOUNT_TIERS,
+  HANDOVER_TIMES,
   MAX_SELF_SERVICE_DAYS,
   MIN_RENTAL_DAYS,
   MONTHLY_PERIOD_DAYS,
@@ -484,6 +485,7 @@ export default function BookingWizard({ initialCarId }: { initialCarId?: string 
                   carId={carId}
                   notice={carNotice}
                   verifying={availabilityQuery.isFetching}
+                  tooLateToday={availabilityQuery.data?.ok === true && availabilityQuery.data.tooLateToday}
                   slots={slotsForCar}
                   pickupTime={pickupTime}
                   returnTime={returnTime}
@@ -997,6 +999,7 @@ function CarStep({
   carId,
   notice,
   verifying,
+  tooLateToday,
   slots,
   pickupTime,
   returnTime,
@@ -1017,6 +1020,7 @@ function CarStep({
   carId?: string
   notice?: string
   verifying: boolean
+  tooLateToday: boolean
   slots?: HandoverSlots
   pickupTime: string
   returnTime: string
@@ -1027,14 +1031,21 @@ function CarStep({
   onSelect: (id: string) => void
   onContinue: () => void
 }) {
+  // Too late today is a clock problem: no car is "booked", so nothing on this
+  // screen may say one is.
+  const clockClosed = tooLateToday && available.length === 0
   return (
     <div>
       <StepHeading
         title="Pick your ride"
         sub={
-          rentalType === 'monthly'
-            ? `Free for the whole month, ${fmtDay(start)} → ${fmtDay(end)}. Prices shown are the flat monthly rate.`
-            : `Free for ${fmtDay(start)} → ${fmtDay(end)}.`
+          // "Free for" only when something is: a sold-out range or a closed
+          // clock gets the plain dates.
+          clockClosed || (available.length === 0 && !verifying)
+            ? `${fmtDay(start)} → ${fmtDay(end)}.`
+            : rentalType === 'monthly'
+              ? `Free for the whole month, ${fmtDay(start)} → ${fmtDay(end)}. Prices shown are the flat monthly rate.`
+              : `Free for ${fmtDay(start)} → ${fmtDay(end)}.`
         }
       />
       {notice && (
@@ -1046,7 +1057,15 @@ function CarStep({
         <p className="mt-4 text-sm text-cw-ink/60">Confirming what's still free…</p>
       )}
 
-      {available.length === 0 && !verifying ? (
+      {/* Two different reasons for an empty list, told apart: the clock
+          (today's last handover has passed) is not the fleet being booked. */}
+      {clockClosed && !verifying ? (
+        <p className="mt-6 rounded-xl bg-cw-yellow-soft px-4 py-4 text-sm font-semibold text-cw-navy">
+          No pickup times left today. Our last handover is at{' '}
+          {fmtTime(HANDOVER_TIMES[HANDOVER_TIMES.length - 1])}, so step back and start
+          from tomorrow or a later day.
+        </p>
+      ) : available.length === 0 && !verifying ? (
         <p className="mt-6 rounded-xl bg-cw-yellow-soft px-4 py-4 text-sm font-semibold text-cw-navy">
           Every car is out for those dates. Try a different range, or message us on WhatsApp.
           We sometimes have a car back early.
@@ -1067,7 +1086,7 @@ function CarStep({
         </div>
       )}
 
-      {unavailable.length > 0 && (
+      {unavailable.length > 0 && !clockClosed && (
         <div className="mt-8">
           <p className="text-sm font-semibold text-cw-ink/60">Out with other guests on your dates</p>
           <div className="mt-3 grid gap-4 sm:grid-cols-2">

@@ -15,6 +15,7 @@ import {
   createBooking,
   createLicenseUploadTicket,
   findHandoverSlots,
+  noPickupTimesLeftToday,
   findBusyRanges,
   getBookingConfirmation,
   listBookableCars,
@@ -139,7 +140,15 @@ export const getAvailableCars = createServerFn({ method: "POST" })
     try {
       const [fleet, slots] = await Promise.all([listBookableCars(), findHandoverSlots(window)]);
       const cars = fleet.filter((c) => slots[c.id]);
-      return { ok: true as const, cars: cars.map(toPublicCar), slots, window };
+      return {
+        ok: true as const,
+        cars: cars.map(toPublicCar),
+        slots,
+        // Set when nothing is offered because today's last slot has passed,
+        // so the wizard can say that instead of "every car is out".
+        tooLateToday: noPickupTimesLeftToday(window.pickupDate),
+        window,
+      };
     } catch (error) {
       if (error instanceof InvalidRentalWindowError) {
         return { ok: false as const, message: error.message, cars: [], window };

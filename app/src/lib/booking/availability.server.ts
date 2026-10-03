@@ -283,6 +283,17 @@ export async function findHandoverSlots(dates: {
   return result;
 }
 
+/**
+ * True when the pickup day is today and the last handover slot has already
+ * gone. findHandoverSlots then offers nothing for ANY car, which is a clock
+ * problem, not a fleet one, and the wizard must say so rather than reporting
+ * every car as out.
+ */
+export function noPickupTimesLeftToday(pickupDate: string): boolean {
+  const now = curacaoNowTime();
+  return pickupDate === curacaoToday() && !HANDOVER_TIMES.some((t) => t > now);
+}
+
 /** CW's own clock. Curaçao is UTC-4 all year (no DST), whatever the server's
  *  timezone is. */
 const CURACAO_TZ = "America/Curacao";
