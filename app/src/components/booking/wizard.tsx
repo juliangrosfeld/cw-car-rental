@@ -15,9 +15,7 @@ import {
   LICENSE_PHOTO_TYPES,
 } from '../../lib/booking/license'
 import {
-  DEFAULT_HANDOVER_TIME,
   DISCOUNT_TIERS,
-  HANDOVER_TIMES,
   MAX_SELF_SERVICE_DAYS,
   MIN_RENTAL_DAYS,
   MONTHLY_PERIOD_DAYS,
@@ -31,9 +29,15 @@ import {
   splitFleet,
   toKey,
   type BusyRange,
+  type HandoverSlots,
   type Quote,
   type RentalType,
 } from '../../lib/booking/rental'
+import {
+  BOOKING_STATUS_LABEL,
+  confirmationCopy,
+  paymentLabel,
+} from '../../lib/booking/confirmation-copy'
 import { CURRENCY_CODE } from '../../lib/money'
 import { supabase } from '../../lib/supabase/client'
 import Calendar from './calendar'
@@ -123,8 +127,10 @@ export default function BookingWizard({ initialCarId }: { initialCarId?: string 
   const [start, setStart] = useState<Date | undefined>()
   const [end, setEnd] = useState<Date | undefined>()
   const [location, setLocation] = useState(PICKUP_LOCATIONS[0].id)
-  const [pickupTime, setPickupTime] = useState(DEFAULT_HANDOVER_TIME)
-  const [returnTime, setReturnTime] = useState(DEFAULT_HANDOVER_TIME)
+  /** '' until chosen. Chosen on the car step, from the times that car still
+   *  has free on these dates (see slotsForCar below). */
+  const [pickupTime, setPickupTime] = useState('')
+  const [returnTime, setReturnTime] = useState('')
   /** Free text: the address we collect the car from at the end. */
   const [dropoff, setDropoff] = useState('')
   const [dropoffError, setDropoffError] = useState<string | undefined>()
@@ -182,16 +188,10 @@ export default function BookingWizard({ initialCarId }: { initialCarId?: string 
 
   /* ---- server's authoritative availability for the chosen range ---- */
   const availabilityQuery = useQuery({
-    queryKey: ['available-cars', rentalType, startKey, endKey, pickupTime, returnTime],
+    queryKey: ['available-cars', rentalType, startKey, endKey],
     queryFn: () =>
       getAvailableCars({
-        data: {
-          rentalType,
-          pickupDate: startKey!,
-          returnDate: endKey ?? null,
-          pickupTime,
-          returnTime,
-        },
+        data: { rentalType, pickupDate: startKey!, returnDate: endKey ?? null },
       }),
     enabled: datesUsable && step >= STEP.CAR,
     staleTime: 30_000,
@@ -213,6 +213,28 @@ export default function BookingWizard({ initialCarId }: { initialCarId?: string 
   }, [cars, busy, startKey, endKey, availabilityQuery.data])
 
   const car = useMemo(() => cars.find((c) => c.id === carId), [cars, carId])
+
+  /** The handover times this car can still be offered on these dates, straight
+   *  from the server's answer. Undefined while that answer is loading: the
+   *  pickers wait for it rather than offering the full list on trust. */
+  const slotsForCar =
+    carId && availabilityQuery.data?.ok ? availabilityQuery.data.slots[carId] : undefined
+  const returnOptions = (pickupTime && slotsForCar?.returnTimes[pickupTime]) || []
+  const timesChosen = Boolean(
+    slotsForCar?.pickupTimes.includes(pickupTime) && returnOptions.includes(returnTime),
+  )
+
+  // A change of car or dates (or a fresher answer) can take a chosen time
+  // away. Clear it rather than carry a time the pickers no longer offer.
+  useEffect(() => {
+    if (!slotsForCar) return
+    if (pickupTime && !slotsForCar.pickupTimes.includes(pickupTime)) {
+      setPickupTime('')
+      setReturnTime('')
+    } else if (returnTime && !(slotsForCar.returnTimes[pickupTime] ?? []).includes(returnTime)) {
+      setReturnTime('')
+    }
+  }, [slotsForCar, pickupTime, returnTime])
   const locationLabel = PICKUP_LOCATIONS.find((l) => l.id === location)?.label ?? ''
 
   /** The same function the server prices with, on the same inputs. Undefined
@@ -436,8 +458,6 @@ export default function BookingWizard({ initialCarId }: { initialCarId?: string 
                   needsCustomQuote={needsCustomQuote}
                   belowMinimum={belowMinimum}
                   canContinue={datesUsable}
-                  pickupTime={pickupTime}
-                  returnTime={returnTime}
                   dropoff={dropoff}
                   dropoffError={dropoffError}
                   onDates={(s, e) => {
@@ -446,8 +466,6 @@ export default function BookingWizard({ initialCarId }: { initialCarId?: string 
                     setDateNotice(undefined)
                   }}
                   onLocation={setLocation}
-                  onPickupTime={setPickupTime}
-                  onReturnTime={setReturnTime}
                   onDropoff={(v) => {
                     setDropoff(v)
                     if (v.trim()) setDropoffError(undefined)
@@ -466,11 +484,22 @@ export default function BookingWizard({ initialCarId }: { initialCarId?: string 
                   carId={carId}
                   notice={carNotice}
                   verifying={availabilityQuery.isFetching}
+                  slots={slotsForCar}
+                  pickupTime={pickupTime}
+                  returnTime={returnTime}
+                  returnOptions={returnOptions}
+                  canContinue={Boolean(carId) && timesChosen}
+                  onPickupTime={(t) => {
+                    setPickupTime(t)
+                    // Keep the return time only if it still works with this pickup.
+                    if (!(slotsForCar?.returnTimes[t] ?? []).includes(returnTime)) setReturnTime('')
+                  }}
+                  onReturnTime={setReturnTime}
                   onSelect={(id) => {
                     setCarId(id)
                     setCarNotice(undefined)
                   }}
-                  onContinue={() => carId && advance(STEP.DETAILS)}
+                  onContinue={() => carId && timesChosen && advance(STEP.DETAILS)}
                 />
               ) : step === STEP.DETAILS ? (
                 <DetailsStep
@@ -490,7 +519,7 @@ export default function BookingWizard({ initialCarId }: { initialCarId?: string 
                   }}
                   onContinue={continueFromDetails}
                 />
-              ) : step === STEP.REVIEW && car && startKey && endKey && currentQuote ? (
+              ) : step === STEP.REVIEW && car && startKey && endKey && currentQuote && timesChosen ? (
                 <ReviewStep
                   car={car}
                   start={fromKey(startKey)}
@@ -504,7 +533,7 @@ export default function BookingWizard({ initialCarId }: { initialCarId?: string 
                   onEdit={goTo}
                   onContinue={() => advance(STEP.PAY)}
                 />
-              ) : step === STEP.PAY && car && startKey && endKey && currentQuote ? (
+              ) : step === STEP.PAY && car && startKey && endKey && currentQuote && timesChosen ? (
                 <PayStep
                   car={car}
                   start={fromKey(startKey)}
@@ -743,14 +772,10 @@ function DatesStep({
   needsCustomQuote,
   belowMinimum,
   canContinue,
-  pickupTime,
-  returnTime,
   dropoff,
   dropoffError,
   onDates,
   onLocation,
-  onPickupTime,
-  onReturnTime,
   onDropoff,
   onContinue,
 }: {
@@ -766,14 +791,10 @@ function DatesStep({
   needsCustomQuote: boolean
   belowMinimum: boolean
   canContinue: boolean
-  pickupTime: string
-  returnTime: string
   dropoff: string
   dropoffError?: string
   onDates: (s?: Date, e?: Date) => void
   onLocation: (id: string) => void
-  onPickupTime: (t: string) => void
-  onReturnTime: (t: string) => void
   onDropoff: (v: string) => void
   onContinue: () => void
 }) {
@@ -784,8 +805,8 @@ function DatesStep({
         title={monthly ? 'When do you collect?' : 'When and where?'}
         sub={
           monthly
-            ? `Tap your collection day. We book a ${MONTHLY_PERIOD_DAYS} day period from there. Then tell us when and where we hand over the keys.`
-            : `Pick your days and times, and where we hand over the keys. Minimum ${MIN_RENTAL_DAYS} days.`
+            ? `Tap your collection day. We book a ${MONTHLY_PERIOD_DAYS} day period from there. Then tell us where we hand over the keys.`
+            : `Pick your days, and where we hand over the keys. Minimum ${MIN_RENTAL_DAYS} days.`
         }
       />
       {notice && (
@@ -821,11 +842,6 @@ function DatesStep({
             ))}
           </select>
 
-          <div className="mt-5 grid grid-cols-2 gap-3">
-            <TimeSelect id="pickup-time" label="Pickup time" value={pickupTime} onChange={onPickupTime} />
-            <TimeSelect id="return-time" label="Drop-off time" value={returnTime} onChange={onReturnTime} />
-          </div>
-
           <div className="mt-5">
             <Field id="dropoff-location" label="Drop-off location" error={dropoffError}>
               <input
@@ -848,17 +864,12 @@ function DatesStep({
               'Checking which days are free…'
             ) : start && end ? (
               <>
-                <span className="font-semibold text-cw-navy">
-                  {fmtDay(start)} at {fmtTime(pickupTime)}
-                </span>{' '}
-                pickup,{' '}
-                <span className="font-semibold text-cw-navy">
-                  {fmtDay(end)} at {fmtTime(returnTime)}
-                </span>{' '}
-                drop-off.
+                <span className="font-semibold text-cw-navy">{fmtDay(start)}</span> pickup,{' '}
+                <span className="font-semibold text-cw-navy">{fmtDay(end)}</span> drop-off.
                 <span className="mt-1 block text-cw-ink/70">
                   {days} {days === 1 ? 'day' : 'days'}
-                  {monthly ? ', at the flat monthly rate.' : '.'}
+                  {monthly ? ', at the flat monthly rate.' : '.'} You pick the times with your car,
+                  from the ones it has free.
                 </span>
               </>
             ) : start ? (
@@ -890,16 +901,21 @@ function DatesStep({
   )
 }
 
-/** A handover time, from the fixed half-hour list the server also checks. */
+/** A handover time. `options` is what the server says is still free for this
+ *  car, never the full list: a time that is not offered cannot be chosen. */
 function TimeSelect({
   id,
   label,
   value,
+  options,
+  disabled,
   onChange,
 }: {
   id: string
   label: string
   value: string
+  options: readonly string[]
+  disabled?: boolean
   onChange: (t: string) => void
 }) {
   return (
@@ -910,10 +926,14 @@ function TimeSelect({
       <select
         id={id}
         value={value}
+        disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-2 w-full rounded-xl border-2 border-cw-navy/15 bg-white px-4 py-3 text-[15px] text-cw-ink transition-colors focus:border-cw-teal focus:outline-none"
+        className="mt-2 w-full rounded-xl border-2 border-cw-navy/15 bg-white px-4 py-3 text-[15px] text-cw-ink transition-colors focus:border-cw-teal focus:outline-none disabled:opacity-50"
       >
-        {HANDOVER_TIMES.map((t) => (
+        <option value="" disabled>
+          Choose a time
+        </option>
+        {options.map((t) => (
           <option key={t} value={t}>
             {fmtTime(t)}
           </option>
@@ -977,6 +997,13 @@ function CarStep({
   carId,
   notice,
   verifying,
+  slots,
+  pickupTime,
+  returnTime,
+  returnOptions,
+  canContinue,
+  onPickupTime,
+  onReturnTime,
   onSelect,
   onContinue,
 }: {
@@ -990,6 +1017,13 @@ function CarStep({
   carId?: string
   notice?: string
   verifying: boolean
+  slots?: HandoverSlots
+  pickupTime: string
+  returnTime: string
+  returnOptions: readonly string[]
+  canContinue: boolean
+  onPickupTime: (t: string) => void
+  onReturnTime: (t: string) => void
   onSelect: (id: string) => void
   onContinue: () => void
 }) {
@@ -1054,7 +1088,38 @@ function CarStep({
         </div>
       )}
 
-      <ContinueButton label="Continue" disabled={!carId} onClick={onContinue} />
+      {carId && (
+        <div className="mt-8 rounded-xl bg-cw-mint-soft p-5">
+          <p className="font-display text-sm font-bold uppercase tracking-widest text-cw-teal-dark">
+            Handover times
+          </p>
+          <p className="mt-1.5 text-sm text-cw-ink/70">
+            {slots
+              ? 'Only times this car is free are listed.'
+              : 'Checking which times this car has free…'}
+          </p>
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <TimeSelect
+              id="pickup-time"
+              label={`Pickup, ${fmtDay(start)}`}
+              value={pickupTime}
+              options={slots?.pickupTimes ?? []}
+              disabled={!slots}
+              onChange={onPickupTime}
+            />
+            <TimeSelect
+              id="return-time"
+              label={`Drop-off, ${fmtDay(end)}`}
+              value={returnTime}
+              options={returnOptions}
+              disabled={!slots || !pickupTime}
+              onChange={onReturnTime}
+            />
+          </div>
+        </div>
+      )}
+
+      <ContinueButton label="Continue" disabled={!canContinue} onClick={onContinue} />
     </div>
   )
 }
@@ -1356,13 +1421,18 @@ function ReviewStep({
             : `By the day · ${q.days} ${q.days === 1 ? 'day' : 'days'}`}
         </ReviewRow>
         <ReviewRow label="Pickup" onEdit={() => onEdit(STEP.DATES)}>
-          {fmtDay(start)} at {fmtTime(pickupTime)} · {locationLabel}
+          {fmtDay(start)} · {locationLabel}
         </ReviewRow>
         <ReviewRow label="Drop-off" onEdit={() => onEdit(STEP.DATES)}>
-          {fmtDay(end)} at {fmtTime(returnTime)} · {dropoff}
+          {fmtDay(end)} · {dropoff}
         </ReviewRow>
         <ReviewRow label="Car" onEdit={() => onEdit(STEP.CAR)}>
           {car.model}, {car.color.toLowerCase()} · {car.transmission}
+        </ReviewRow>
+        {/* Times are chosen with the car, from what it has free, so they are
+            edited there too. */}
+        <ReviewRow label="Times" onEdit={() => onEdit(STEP.CAR)}>
+          Pickup at {fmtTime(pickupTime)} · drop-off at {fmtTime(returnTime)}
         </ReviewRow>
         <ReviewRow label="Driver" onEdit={() => onEdit(STEP.DETAILS)}>
           {details.name} · {details.email} · {details.phone}
@@ -1532,9 +1602,21 @@ function PayStep({
 }
 
 function Confirmation({ confirmation: c }: { confirmation: Confirmed }) {
-  const first = c.client.full_name.trim().split(/\s+/)[0] || 'friend'
   /** Short, readable handle for WhatsApp — the full uuid is the real key. */
   const reference = c.bookingId.slice(0, 8).toUpperCase()
+  // The words come from confirmation-copy, which the confirmation email will
+  // share, so the screen and the inbox can never disagree.
+  const copy = confirmationCopy({
+    fullName: c.client.full_name,
+    carModel: c.car.model,
+    pickupDate: c.pickupDate,
+    pickupTime: c.pickupTime,
+    returnDate: c.returnDate,
+    returnTime: c.returnTime,
+    pickupLocation: c.pickupLocation,
+    reference,
+  })
+  const payment = paymentLabel(c.paymentStatus)
 
   return (
     <div className="text-center">
@@ -1544,12 +1626,10 @@ function Confirmation({ confirmation: c }: { confirmation: Confirmed }) {
         </svg>
       </span>
       <h2 className="mt-6 font-display text-3xl font-extrabold tracking-tight text-cw-navy">
-        Masha danki, {first}!
+        {copy.headline}
       </h2>
       <p className="mx-auto mt-3 max-w-[44ch] text-[15px] leading-relaxed text-cw-ink/85">
-        The {c.car.model} is yours from {fmtDay(fromKey(c.pickupDate))} to{' '}
-        {fmtDay(fromKey(c.returnDate))}, keys at {c.pickupLocation}. We'll confirm on WhatsApp
-        within the hour.
+        {copy.summary}
       </p>
 
       <dl className="mx-auto mt-7 max-w-[26rem] divide-y divide-cw-navy/10 text-left">
@@ -1584,19 +1664,14 @@ function Confirmation({ confirmation: c }: { confirmation: Confirmed }) {
         </ConfirmRow>
         <ConfirmRow label="Status">{BOOKING_STATUS_LABEL[c.bookingStatus]}</ConfirmRow>
         <ConfirmRow label="Payment">
-          {c.paymentStatus === 'paid' ? 'Paid, thank you' : 'Pay at pickup'}
-          {c.paymentStatus !== 'paid' && (
-            <span className="block text-xs text-cw-ink/60">Nothing has been charged online.</span>
-          )}
+          {payment.label}
+          {payment.note && <span className="block text-xs text-cw-ink/60">{payment.note}</span>}
         </ConfirmRow>
       </dl>
 
       {/* No "a copy is in your inbox" here: nothing sends one yet. Pointing at
           the reference is the honest version until it does. */}
-      <p className="mt-6 text-xs text-cw-ink/55">
-        Keep reference {reference} handy, or screenshot this page. It is what we ask for if you
-        message us.
-      </p>
+      <p className="mt-6 text-sm text-cw-ink/70">{copy.contact}</p>
       <a
         href={`${WHATSAPP_URL}?text=${encodeURIComponent(`Hi CW! About my reservation ${reference}`)}`}
         target="_blank"
@@ -1607,16 +1682,6 @@ function Confirmation({ confirmation: c }: { confirmation: Confirmed }) {
       </a>
     </div>
   )
-}
-
-/** How a booking status reads to a guest. A fresh booking is `pending` until we
- *  confirm it on WhatsApp, which is exactly what the screen above promises. */
-const BOOKING_STATUS_LABEL: Record<Confirmed['bookingStatus'], string> = {
-  pending: 'Reserved, confirmation on WhatsApp shortly',
-  confirmed: 'Confirmed',
-  active: 'On the road',
-  completed: 'Completed',
-  cancelled: 'Cancelled',
 }
 
 function ConfirmRow({ label, children }: { label: string; children: React.ReactNode }) {
@@ -1631,7 +1696,9 @@ function ConfirmRow({ label, children }: { label: string; children: React.ReactN
 function MissingState({ onRestart }: { onRestart: () => void }) {
   return (
     <div className="py-6 text-center">
-      <p className="text-[15px] text-cw-ink/80">This step needs your dates first.</p>
+      <p className="text-[15px] text-cw-ink/80">
+        This step needs your dates, car and handover times first.
+      </p>
       <button
         type="button"
         onClick={onRestart}

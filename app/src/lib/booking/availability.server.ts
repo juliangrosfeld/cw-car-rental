@@ -48,6 +48,7 @@ import { supabaseAdmin } from "../supabase/admin.server";
 import { LICENSE_BUCKET, LICENSE_PHOTO_PATH_RE, LICENSE_PHOTO_TYPES } from "./license";
 import type { Booking, Car, Client, NewBooking, Vehicle } from "../supabase/types";
 import {
+  HANDOVER_TIMES,
   addDaysToKey,
   isHandoverTime,
   quoteRental,
@@ -55,6 +56,7 @@ import {
   resolveWindow,
   toTimestamp,
   type BusyRange,
+  type HandoverSlots,
   type QuoteRefusal,
   type RentalType,
 } from "./rental";
@@ -197,6 +199,96 @@ export async function findAvailableCars(window: RentalWindow): Promise<Car[]> {
   const freeListings = new Set(vehicles.filter((v) => !taken.has(v.id)).map((v) => v.listing_id));
   return (cars ?? []).filter((c) => freeListings.has(c.id));
 }
+
+/**
+ * The handover times a guest can actually be offered for these dates, per
+ * listing: every pickup time that works, and for each one, the return times
+ * that work with it.
+ *
+ * WHY PAIRS AND NOT TWO LISTS. A listing can be backed by two vehicles, and a
+ * window is good only if ONE of them is free for the whole of it. Spark A may
+ * free up at 16:00 on the pickup day while Spark B is due out at 11:00 on the
+ * return day: a 17:00 pickup is fine and an 18:00 return is fine, but only on
+ * different cars. So the return times are worked out per pickup time.
+ *
+ * SAME TEST AS THE WRITE. Each candidate pair is checked with the half-open
+ * overlap vehiclesTakenIn applies (existing.pickup < new.return AND
+ * existing.return > new.pickup), against each booking's own stored date and
+ * time. 'YYYY-MM-DDTHH:MM:SS' strings compare correctly as strings, so this is
+ * the constraint's arithmetic, done in memory over a fleet of a handful of
+ * cars rather than one query per candidate.
+ *
+ * This is about OFFERING only what is free, not about safety: a race between
+ * two guests is still settled by the exclusion constraint at insert time.
+ *
+ * A listing absent from the result has no workable pair at all, and is not
+ * bookable for these dates.
+ */
+export async function findHandoverSlots(dates: {
+  pickupDate: string;
+  returnDate: string;
+}): Promise<Record<string, HandoverSlots>> {
+  assertValidWindow({ ...dates, pickupTime: HANDOVER_TIMES[0], returnTime: HANDOVER_TIMES[0] });
+  const { pickupDate, returnDate } = dates;
+
+  // Day-level superset of everything that could touch the window; the exact
+  // time test below does the real filtering.
+  const [vehicles, { data: bookings, error }] = await Promise.all([
+    loadRoadworthyVehicles(),
+    supabaseAdmin()
+      .from("bookings")
+      .select("vehicle_id, pickup_date, pickup_time, return_date, return_time")
+      .neq("booking_status", OCCUPYING)
+      .lte("pickup_date", returnDate)
+      .gte("return_date", pickupDate),
+  ]);
+  if (error) throw new Error(`Failed to load bookings: ${error.message}`);
+
+  const heldBy = new Map<string, { from: string; to: string }[]>();
+  for (const b of bookings ?? []) {
+    const span = { from: `${b.pickup_date}T${b.pickup_time}`, to: `${b.return_date}T${b.return_time}` };
+    const list = heldBy.get(b.vehicle_id);
+    if (list) list.push(span);
+    else heldBy.set(b.vehicle_id, [span]);
+  }
+
+  // A pickup earlier today than right now is not a time anyone can be offered.
+  const pickupTimes = HANDOVER_TIMES.filter(
+    (t) => pickupDate !== curacaoToday() || t > curacaoNowTime(),
+  );
+
+  const result: Record<string, HandoverSlots> = {};
+  for (const v of vehicles) {
+    const spans = heldBy.get(v.id) ?? [];
+    const slots = (result[v.listing_id] ??= { pickupTimes: [], returnTimes: {} });
+    for (const pt of pickupTimes) {
+      const start = `${pickupDate}T${pt}`;
+      for (const rt of HANDOVER_TIMES) {
+        const end = `${returnDate}T${rt}`;
+        if (spans.some((s) => s.from < end && s.to > start)) continue;
+        const forPickup = (slots.returnTimes[pt] ??= []);
+        if (!forPickup.includes(rt)) forPickup.push(rt);
+      }
+    }
+  }
+
+  // Normalise: list order, and drop listings with nothing to offer.
+  for (const [listingId, slots] of Object.entries(result)) {
+    slots.pickupTimes = HANDOVER_TIMES.filter((t) => slots.returnTimes[t]?.length);
+    for (const t of slots.pickupTimes) {
+      slots.returnTimes[t] = HANDOVER_TIMES.filter((r) => slots.returnTimes[t].includes(r));
+    }
+    if (slots.pickupTimes.length === 0) delete result[listingId];
+  }
+  return result;
+}
+
+/** CW's own clock. Curaçao is UTC-4 all year (no DST), whatever the server's
+ *  timezone is. */
+const CURACAO_TZ = "America/Curacao";
+const curacaoToday = () => new Date().toLocaleDateString("en-CA", { timeZone: CURACAO_TZ });
+const curacaoNowTime = () =>
+  new Date().toLocaleTimeString("en-GB", { timeZone: CURACAO_TZ, hourCycle: "h23" });
 
 /** Every listing with a car on the road, regardless of dates — the fleet the
  *  calendar reasons over. A listing whose only vehicle is in the shop is absent,
@@ -595,8 +687,13 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
   //    and NOT shown to the guest: they booked a Spark, they are getting a
   //    Spark, and which of the two is an operational detail the CRM cares about.
   //
-  //    booking_status/payment_status stay at their opening values — payment is
-  //    not integrated yet, so claiming anything else would be a lie.
+  //    CONFIRMED AT INSERT. A booking that lands here is already as certain as
+  //    a person could make it: the wizard only offers handover times that are
+  //    free (findHandoverSlots), and the exclusion constraint makes the insert
+  //    itself the final word on any race, so a row that exists holds its car.
+  //    There is nothing left for a human to check before saying yes. Payment is
+  //    a separate question with its own column: payment_status stays at its
+  //    opening value until money actually changes hands (see recordPayment).
   const taken = await vehiclesTakenIn(window);
   const candidates = fleet.filter((v) => !taken.has(v.id));
 
@@ -615,6 +712,7 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
     discount_pct: quote.discountPct,
     discount_cents: quote.discountCents,
     special_requests: input.specialRequests?.trim() || null,
+    booking_status: "confirmed",
   });
 
   if (!assigned) {

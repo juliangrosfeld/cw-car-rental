@@ -14,7 +14,7 @@ import { z } from "zod";
 import {
   createBooking,
   createLicenseUploadTicket,
-  findAvailableCars,
+  findHandoverSlots,
   findBusyRanges,
   getBookingConfirmation,
   listBookableCars,
@@ -125,20 +125,21 @@ export const getFleetAvailability = createServerFn({ method: "GET" }).handler(as
  * payload for instant feedback; this is the server's answer, called when the
  * guest reaches the car step so a stale cache cannot offer a car that was taken
  * thirty seconds ago.
+ *
+ * It answers for the DATES, and carries the handover times each car can still
+ * be offered on them (findHandoverSlots). A car is listed only if at least one
+ * pickup/return pair works, and the wizard's time pickers show only those
+ * pairs. Any times in the request are ignored here: they are chosen from this
+ * answer, not checked against it.
  */
 export const getAvailableCars = createServerFn({ method: "POST" })
   .inputValidator(requestSchema)
   .handler(async ({ data }) => {
-    const window = resolveWindow(
-      data.rentalType,
-      data.pickupDate,
-      data.returnDate,
-      data.pickupTime,
-      data.returnTime,
-    );
+    const window = resolveWindow(data.rentalType, data.pickupDate, data.returnDate);
     try {
-      const cars = await findAvailableCars(window);
-      return { ok: true as const, cars: cars.map(toPublicCar), window };
+      const [fleet, slots] = await Promise.all([listBookableCars(), findHandoverSlots(window)]);
+      const cars = fleet.filter((c) => slots[c.id]);
+      return { ok: true as const, cars: cars.map(toPublicCar), slots, window };
     } catch (error) {
       if (error instanceof InvalidRentalWindowError) {
         return { ok: false as const, message: error.message, cars: [], window };

@@ -48,6 +48,15 @@ export const HANDOVER_TIMES: readonly string[] = Array.from({ length: 25 }, (_, 
   return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}:00`;
 });
 
+/** The handover times a car can still be offered for a pair of dates, as
+ *  findHandoverSlots works them out on the server. */
+export interface HandoverSlots {
+  /** 'HH:MM:SS', in HANDOVER_TIMES order. */
+  pickupTimes: string[];
+  /** For each offered pickup time, the return times that work with it. */
+  returnTimes: Record<string, string[]>;
+}
+
 export function isHandoverTime(value: unknown): value is string {
   return typeof value === "string" && HANDOVER_TIMES.includes(value);
 }
