@@ -24,6 +24,7 @@ import { PrepAdvanceButton, PrepPipeline } from "../../../components/admin/prep-
 import AdminShell from "../../../components/admin/shell";
 import { Button, Field, Panel, StatusPill } from "../../../components/admin/ui";
 import {
+  CollectCashButton,
   FixMismatch,
   LedgerEntries,
   RecordPayment,
@@ -99,13 +100,22 @@ function BookingDetailPage() {
         booking.returnDate,
       )} · ref ${booking.ref}`}
       actions={
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <Link
             to="/admin/bookings"
             className="rounded-lg border border-cw-navy/15 bg-white px-3 py-1.5 text-[13px] font-semibold text-cw-navy transition-colors hover:border-cw-teal hover:text-cw-teal"
           >
             ‹ All bookings
           </Link>
+          {/* Cash and keys change hands at the same moment, so the two
+              actions sit side by side; they stay separate so neither forces
+              the other (see CollectCashButton). */}
+          <CollectCashButton
+            bookingId={booking.id}
+            ledger={ledger}
+            cancelled={booking.bookingStatus === "cancelled"}
+            onNotice={setNotice}
+          />
           <PrepAdvanceButton
             bookingId={booking.id}
             prepStatus={booking.prepStatus}

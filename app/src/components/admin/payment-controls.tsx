@@ -68,6 +68,101 @@ export function LedgerEntries({ ledger }: { ledger: BookingLedger }) {
   );
 }
 
+/* ── cash at the handover ──────────────────────────────────────────────────── */
+
+/**
+ * "Cash collected", for the moment the keys change hands.
+ *
+ * It sits beside the Hand over button because that is when cash actually
+ * arrives, but it is a SEPARATE action on purpose: a car can go out before the
+ * money does (a guest paying by transfer, a regular on account), and money can
+ * come in on return. Neither tap forces the other.
+ *
+ * One tap proposes the whole outstanding balance in cash; a second confirms.
+ * The confirm step is there because this writes to the ledger, and a stray
+ * thumb on a phone at the curb should not. A part payment, or anything not in
+ * cash, goes through the full form in the Payments panel.
+ *
+ * It records through recordBookingPayment, the same path as that form, so the
+ * ledger, the payment status and every total stay in one place.
+ */
+export function CollectCashButton({
+  bookingId,
+  ledger,
+  cancelled,
+  onNotice,
+}: {
+  bookingId: string;
+  ledger: BookingLedger | null;
+  cancelled: boolean;
+  onNotice?: (message: string) => void;
+}) {
+  const router = useRouter();
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  if (cancelled || !ledger) return null;
+
+  // Nothing left to collect: say so here, where the question gets asked.
+  if (ledger.outstandingCents <= 0) {
+    return (
+      <span className="rounded-lg bg-cw-teal-soft px-3 py-1.5 text-[13px] font-semibold text-cw-teal-dark">
+        ✓ Paid in full
+      </span>
+    );
+  }
+
+  const amount = formatMoneyExact(ledger.outstandingCents);
+
+  async function collect() {
+    setBusy(true);
+    try {
+      const result = await recordBookingPayment({
+        data: {
+          bookingId,
+          amountCents: ledger!.outstandingCents,
+          method: "cash",
+          direction: "charge",
+        },
+      });
+      if (!result.ok) {
+        onNotice?.(result.message);
+        return;
+      }
+      setConfirming(false);
+      await router.invalidate();
+    } catch {
+      onNotice?.("Could not record the cash. Check the connection and try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!confirming) {
+    return (
+      <Button
+        size="md"
+        title={`Record ${amount} taken in cash. Part payments and cards: use the Payments panel.`}
+        onClick={() => setConfirming(true)}
+      >
+        Cash collected · {amount}
+      </Button>
+    );
+  }
+
+  return (
+    <span className="flex items-center gap-1.5 rounded-lg bg-cw-yellow-soft px-2 py-1">
+      <span className="text-[13px] font-semibold text-cw-navy">{amount} in cash?</span>
+      <Button size="sm" variant="primary" disabled={busy} onClick={collect}>
+        {busy ? "Saving…" : "Confirm"}
+      </Button>
+      <Button size="sm" disabled={busy} onClick={() => setConfirming(false)}>
+        Cancel
+      </Button>
+    </span>
+  );
+}
+
 /* ── recording ─────────────────────────────────────────────────────────────── */
 
 export function RecordPayment({ ledger }: { ledger: BookingLedger }) {
