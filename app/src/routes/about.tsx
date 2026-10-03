@@ -37,7 +37,8 @@ function AboutPage() {
  * Editorial opener: the Clay story told over the diamond it came from. The
  * photo is the section's full-bleed background; a navy scrim (same treatment
  * direction as the Three Stops cards, scaled to cover the whole block) sits
- * between image and copy so the heading, story and quote read in white on top.
+ * between image and copy so the heading and quote read in white on top. On
+ * mobile the copy is pushed down so Clay's face sits clear above it.
  */
 function StorySection() {
   return (
@@ -46,20 +47,17 @@ function StorySection() {
       <img
         src="/assets/about/claywinklaar-cw-images.png"
         alt={`${FOUNDER_NAME} at bat on a Curaçao ball field`}
-        className="absolute inset-0 -z-10 h-full w-full object-cover object-[70%_30%]"
+        className="absolute inset-0 -z-10 h-full w-full object-cover object-[42%_30%] md:object-[70%_30%]"
       />
-      {/* Scrim: navy, darkest at the base and along the left where the copy
-          lives, so type stays fully legible over the photo. */}
+      {/* Scrim: a light navy wash, darkest at the base where the copy sits.
+          Mobile runs heavier at the bottom because the quote is under the
+          large-text size there and needs 4.5:1. */}
       <span
         aria-hidden
-        className="absolute inset-0 -z-10 bg-gradient-to-t from-cw-navy/95 via-cw-navy/80 to-cw-navy/60"
-      />
-      <span
-        aria-hidden
-        className="absolute inset-0 -z-10 bg-gradient-to-r from-cw-navy/80 via-cw-navy/45 to-transparent"
+        className="absolute inset-0 -z-10 bg-gradient-to-t from-cw-navy/75 via-cw-navy/35 to-cw-navy/10 md:from-cw-navy/50 md:via-cw-navy/40 md:to-cw-navy/20 lg:from-cw-navy/40 lg:via-cw-navy/25 lg:to-cw-navy/15"
       />
 
-      <div className="mx-auto max-w-[1160px] px-5 py-28 md:px-8 md:py-36">
+      <div className="mx-auto max-w-[1160px] px-5 pb-16 pt-[22rem] md:px-8 md:py-36">
         <div className="grid gap-12 md:grid-cols-[1fr_1.1fr] md:gap-20">
           <div className="md:pt-6">
             <p className="cw-waypoint text-cw-peach">
@@ -70,16 +68,6 @@ function StorySection() {
             </h1>
           </div>
           <div className="space-y-6 text-base leading-relaxed text-white/90 md:pt-10 md:text-lg">
-            <p>
-              {FOUNDER_NAME} is nineteen, born and raised in Curaçao, and spent most of those years
-              on a baseball diamond. Professional ball teaches you two things fast: show up
-              prepared, and never coast on talent. He runs CW the same way.
-            </p>
-            <p>
-              Every car gets checked before every handover. Every message gets a real answer from a
-              real person. And every guest gets the version of Curaçao that locals actually love,
-              not the one printed on a brochure.
-            </p>
             <blockquote className="border-l-4 border-cw-peach pl-5 font-display text-lg font-bold leading-snug text-white md:text-xl">
               "{FOUNDER_QUOTE}"
             </blockquote>
@@ -98,11 +86,6 @@ function WhyCw() {
         <h2 className="font-display text-[clamp(1.8rem,3.4vw,2.9rem)] font-extrabold leading-tight tracking-tight text-cw-navy">
           {POSITIONING}
         </h2>
-        <p className="mx-auto mt-6 max-w-[56ch] text-base leading-relaxed text-cw-ink/85 md:text-lg">
-          That friend meets you at the airport, tells you where the grouper is actually good, and
-          hands you keys instead of paperwork. Renting local means the money stays on the island
-          and the service stays personal.
-        </p>
       </div>
     </section>
   );
