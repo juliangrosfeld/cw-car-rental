@@ -131,6 +131,9 @@ function LoginPage() {
         </div>
 
         <form
+          // POST, so a submit that lands before the page is interactive can never
+          // put the password in the address bar.
+          method="post"
           onSubmit={handleSubmit}
           className="rounded-2xl border border-white/10 bg-white p-6 shadow-[0_18px_50px_rgba(0,0,0,0.35)]"
         >

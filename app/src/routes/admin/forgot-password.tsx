@@ -82,7 +82,7 @@ function ForgotPasswordPage() {
 
   return (
     <AuthCard footer={back}>
-      <form onSubmit={handleSubmit}>
+      <form method="post" onSubmit={handleSubmit}>
         <h1 className="font-display text-[20px] font-extrabold tracking-tight text-cw-navy">
           Forgot password?
         </h1>

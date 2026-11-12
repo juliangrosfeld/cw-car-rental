@@ -151,7 +151,7 @@ function ResetPasswordPage() {
 
   return (
     <AuthCard footer={back}>
-      <form onSubmit={handleSubmit}>
+      <form method="post" onSubmit={handleSubmit}>
         <h1 className={heading}>Set a new password</h1>
         <p className="mt-1 text-[13px] text-cw-ink/60">
           At least {ADMIN_PASSWORD_MIN_LENGTH} characters. A few unrelated words work well.
