@@ -417,6 +417,7 @@ async function findOrCreateClient(input: {
   fullName: string;
   email: string;
   phone: string;
+  country: string;
   license: DriverLicense;
 }): Promise<Client> {
   const db = supabaseAdmin();
@@ -436,9 +437,13 @@ async function findOrCreateClient(input: {
     license_number: input.license.number.trim(),
     license_expiry: input.license.expiry,
     license_photo_path: input.license.photoPath,
+    // Travels with the license rather than with the name: like the license it
+    // describes the driver of THIS rental, and before Nov 2026 the wizard never
+    // asked, so most existing records have none to keep.
+    country_of_residence: input.country,
   };
 
-  // The one exception to "reuse as-is": the license. Name and phone stay as
+  // The one exception to "reuse as-is": the license (and the country beside it). Name and phone stay as
   // first written (see above), but the license is the document THIS rental is
   // driven on, and a returning guest may well have renewed it since. Keeping
   // the stale one would leave the CRM holding a license that no longer proves
@@ -511,6 +516,8 @@ export interface CreateBookingInput {
   fullName: string;
   email: string;
   phone: string;
+  /** Country of residence, one of COUNTRIES. */
+  country: string;
   pickupLocation: string;
   returnLocation: string;
   flightNumber?: string | null;
@@ -694,6 +701,7 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
     fullName: input.fullName,
     email: input.email,
     phone: input.phone,
+    country: input.country,
     license: input.license,
   });
 

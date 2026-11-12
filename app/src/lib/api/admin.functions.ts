@@ -46,6 +46,7 @@ import { PAYMENT_METHODS } from "../admin/payments";
 import { STATS_WINDOWS, type StatsWindow } from "../admin/fleet";
 import { PREP_FLOW } from "../admin/prep";
 import { RENTAL_TYPES } from "../booking/rental";
+import { isCountry } from "../../content/countries";
 import { PAYMENT_STATUS, VEHICLE_STATUS } from "../supabase/types";
 import type { BookingFilters, ClientFilter, PaymentsFilter } from "../admin/types";
 
@@ -463,6 +464,9 @@ export const createBookingManually = createServerFn({ method: "POST" })
           fullName: z.string().trim().min(1, "We need a name for the reservation."),
           email: z.string().trim().email("That email does not look complete."),
           phone: z.string().trim().min(5, "A phone or WhatsApp number helps us meet them."),
+          // Optional at the counter: a booking taken on a bad phone line should
+          // not be blocked on it. When given, it is one of COUNTRIES.
+          country: z.string().refine(isCountry, "Pick the country from the list.").nullish(),
         })
         .nullish(),
       vehicleId: z.uuid(),
@@ -486,7 +490,7 @@ export const createBookingManually = createServerFn({ method: "POST" })
     const admin = await requireAdmin();
     return createManualBooking({
       clientId: data.clientId ?? null,
-      guest: data.guest ?? null,
+      guest: data.guest ? { ...data.guest, country: data.guest.country ?? null } : null,
       vehicleId: data.vehicleId,
       rentalType: data.rentalType,
       pickupDate: data.pickupDate,

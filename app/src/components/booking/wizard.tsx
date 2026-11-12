@@ -47,6 +47,7 @@ import { CURRENCY_CODE } from '../../lib/money'
 import { supabase } from '../../lib/supabase/client'
 import InsuranceInfo from '../site/insurance-info'
 import Calendar from './calendar'
+import CountrySelect from './country-select'
 
 /**
  * The 6-step booking wizard: Rental → Dates → Car → Details → Review → Pay.
@@ -93,6 +94,8 @@ interface Details {
   name: string
   email: string
   phone: string
+  /** '' or one of COUNTRIES. Country of residence. */
+  country: string
   flight: string
   note: string
   licenseNumber: string
@@ -113,6 +116,7 @@ const EMPTY_DETAILS: Details = {
   name: '',
   email: '',
   phone: '',
+  country: '',
   flight: '',
   note: '',
   licenseNumber: '',
@@ -272,6 +276,7 @@ export default function BookingWizard({ initialCarId }: { initialCarId?: string 
           fullName: details.name,
           email: details.email,
           phone: details.phone,
+          country: details.country,
           pickupLocation: locationLabel,
           returnLocation: dropoff.trim(),
           flightNumber: details.flight || null,
@@ -372,6 +377,7 @@ export default function BookingWizard({ initialCarId }: { initialCarId?: string 
       next.email = 'That email does not look complete.'
     if (details.phone.replace(/\D/g, '').length < 7)
       next.phone = 'A phone or WhatsApp number helps us meet you.'
+    if (!details.country) next.country = 'Pick your country from the list.'
     if (details.licenseNumber.trim().length < 4)
       next.licenseNumber = 'We need the number on your driver\'s license.'
     if (!details.licenseExpiry) next.licenseExpiry = 'When does your license expire?'
@@ -1308,6 +1314,15 @@ function DetailsStep({
         <Field id="bk-phone" label="Phone or WhatsApp" error={errors.phone}>
           <input id="bk-phone" type="tel" autoComplete="tel" value={details.phone} onChange={(e) => onChange({ phone: e.target.value })} className={inputClass(!!errors.phone)} />
         </Field>
+        <Field id="bk-country" label="Country" error={errors.country}>
+          <CountrySelect
+            id="bk-country"
+            value={details.country}
+            onChange={(country) => onChange({ country })}
+            invalid={!!errors.country}
+            inputClassName={inputClass(!!errors.country)}
+          />
+        </Field>
         <Field id="bk-flight" label="Flight number" optional>
           <input id="bk-flight" value={details.flight} onChange={(e) => onChange({ flight: e.target.value })} placeholder="We track delays for airport pickups" className={inputClass()} />
         </Field>
@@ -1475,7 +1490,7 @@ function ReviewStep({
           Pickup at {fmtTime(pickupTime)} · drop-off at {fmtTime(returnTime)}
         </ReviewRow>
         <ReviewRow label="Driver" onEdit={() => onEdit(STEP.DETAILS)}>
-          {details.name} · {details.email} · {details.phone}
+          {details.name} · {details.email} · {details.phone} · {details.country}
           <span className="mt-1 block text-sm text-cw-ink/65">
             {/* With the year: fmtDay drops it, and "valid until Jun 30" on a
                 December rental reads as already expired. */}

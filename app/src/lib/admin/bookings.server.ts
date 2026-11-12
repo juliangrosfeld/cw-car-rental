@@ -841,7 +841,7 @@ export async function getManualBookingOptions(input: {
 export interface ManualBookingInput {
   /** An existing guest, or null to create one from `guest`. */
   clientId: string | null;
-  guest: { fullName: string; email: string; phone: string } | null;
+  guest: { fullName: string; email: string; phone: string; country: string | null } | null;
   /** The PHYSICAL car, named by the operator. Its listing is derived, never
    *  taken from the form — see below. */
   vehicleId: string;
@@ -1037,6 +1037,7 @@ async function resolveClient(
       full_name: guest.fullName.trim(),
       email: guest.email.trim().toLowerCase(),
       phone: guest.phone.trim(),
+      country_of_residence: guest.country,
     })
     .select("id")
     .single();

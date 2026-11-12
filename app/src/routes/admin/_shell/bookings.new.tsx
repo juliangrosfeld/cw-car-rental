@@ -27,6 +27,7 @@ import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 
 import AdminShell from "../../../components/admin/shell";
+import CountrySelect from "../../../components/booking/country-select";
 import { Button, Field, Panel, StatusPill } from "../../../components/admin/ui";
 import { createBookingManually, fetchManualBookingOptions } from "../../../lib/api/admin.functions";
 import { formatDate, formatDateShort, formatMoney } from "../../../lib/admin/format";
@@ -119,6 +120,7 @@ function NewBookingPage() {
   const [guestName, setGuestName] = useState("");
   const [guestEmail, setGuestEmail] = useState("");
   const [guestPhone, setGuestPhone] = useState("");
+  const [guestCountry, setGuestCountry] = useState("");
   const [pickupLocation, setPickupLocation] = useState(PICKUP_LOCATIONS[0].label);
   const [returnLocation, setReturnLocation] = useState(PICKUP_LOCATIONS[0].label);
   const [flightNumber, setFlightNumber] = useState("");
@@ -181,7 +183,12 @@ function NewBookingPage() {
           clientId: useExistingClient ? clientId : null,
           guest: useExistingClient
             ? null
-            : { fullName: guestName, email: guestEmail, phone: guestPhone },
+            : {
+                fullName: guestName,
+                email: guestEmail,
+                phone: guestPhone,
+                country: guestCountry || null,
+              },
           vehicleId: picked.vehicle.id,
           rentalType,
           pickupDate,
@@ -390,7 +397,7 @@ function NewBookingPage() {
                   </span>
                 </label>
               ) : (
-                <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
                   <label className="block">
                     <span className={labelClass}>Name</span>
                     <input
@@ -416,6 +423,20 @@ function NewBookingPage() {
                       className={`mt-1 ${inputClass}`}
                     />
                   </label>
+                  <div>
+                    <label htmlFor="nb-country" className={labelClass}>
+                      Country
+                    </label>
+                    <div className="mt-1">
+                      <CountrySelect
+                        id="nb-country"
+                        value={guestCountry}
+                        onChange={setGuestCountry}
+                        inputClassName={inputClass}
+                        placeholder="Country of residence"
+                      />
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

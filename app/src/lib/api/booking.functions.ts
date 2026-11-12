@@ -33,6 +33,7 @@ import {
 } from "../booking/rental";
 import { LICENSE_PHOTO_PATH_RE, LICENSE_PHOTO_TYPES } from "../booking/license";
 import { notifyNewBooking } from "../email/notify-booking.server";
+import { isCountry } from "../../content/countries";
 import type { Car } from "../supabase/types";
 
 /** The car fields safe to serialise to the browser. `cars` is anon-readable in
@@ -165,6 +166,10 @@ const submitSchema = requestSchema.and(
     fullName: z.string().trim().min(1, "We need a name for the reservation."),
     email: z.string().trim().email("That email does not look complete."),
     phone: z.string().trim().min(7, "A phone or WhatsApp number helps us meet you."),
+    // One of the names in src/content/countries.ts, exactly. Not free text: the
+    // column is read by people, and "Holland", "NL" and "the netherlands" as
+    // three different values would make it useless to filter on.
+    country: z.string().refine(isCountry, "Pick your country from the list."),
     pickupLocation: z.string().min(1),
     returnLocation: z.string().trim().min(1, "Tell us where to collect the car.").max(200),
     flightNumber: z.string().max(20).optional().nullable(),
