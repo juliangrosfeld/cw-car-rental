@@ -34,6 +34,7 @@ import {
   setBookingPrepStatus,
 } from "../admin/bookings.server";
 import { getClientDetail, getClientsList } from "../admin/clients.server";
+import { getLicensePhotoLink, getLicensesList } from "../admin/licenses.server";
 import { getFleetCar, getFleetOverview, updateCar, updateVehicle } from "../admin/fleet.server";
 import {
   getBookingLedger,
@@ -225,6 +226,33 @@ export const fetchAdminClient = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     const admin = await requireAdmin();
     return { admin, client: await getClientDetail(data.clientId) };
+  });
+
+/* ── license photos ────────────────────────────────────────────────────────── */
+
+/**
+ * A signed link (about 60 seconds) to one client's license photo.
+ *
+ * ADMIN ONLY, CHECKED HERE: requireAdmin() resolves the session cookie against
+ * Supabase Auth and requires app_metadata.role === 'admin' before anything is
+ * signed. The bucket itself stays private; this is the only door.
+ *
+ * POST, not GET, although it only reads: a GET could be cached or prefetched,
+ * and a cached one-minute link is a broken image.
+ */
+export const fetchLicensePhoto = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ clientId: z.uuid() }))
+  .handler(async ({ data }) => {
+    await requireAdmin();
+    return getLicensePhotoLink(data.clientId);
+  });
+
+/** The Licenses page: every client with a license on file, searchable by name. */
+export const fetchAdminLicenses = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ query: z.string().max(120).nullish() }))
+  .handler(async ({ data }) => {
+    const admin = await requireAdmin();
+    return { admin, list: await getLicensesList(data.query ?? "") };
   });
 
 /* ── payments ──────────────────────────────────────────────────────────────── */

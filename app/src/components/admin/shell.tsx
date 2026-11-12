@@ -73,6 +73,14 @@ const PaymentsIcon = () => (
   </svg>
 );
 
+const LicensesIcon = () => (
+  <svg {...iconProps}>
+    <rect x="3" y="5.5" width="18" height="13" rx="2" />
+    <circle cx="8.5" cy="11" r="1.8" />
+    <path d="M13 10h5M13 13.5h5M6 15.5h5" />
+  </svg>
+);
+
 const SignOutIcon = () => (
   <svg {...iconProps}>
     <path d="M14.5 3.5h3a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2h-3" />
@@ -89,6 +97,7 @@ const NAV = [
   { to: "/admin/bookings", label: "Bookings", icon: BookingsIcon, exact: false },
   { to: "/admin/fleet", label: "Fleet", icon: FleetIcon, exact: false },
   { to: "/admin/clients", label: "Clients", icon: ClientsIcon, exact: false },
+  { to: "/admin/licenses", label: "Licenses", icon: LicensesIcon, exact: false },
   { to: "/admin/payments", label: "Payments", icon: PaymentsIcon, exact: false },
 ] as const;
 

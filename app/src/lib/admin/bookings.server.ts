@@ -479,6 +479,7 @@ interface RawDetailRow {
     phone: string;
     license_number: string | null;
     license_expiry: string | null;
+    license_photo_path: string | null;
     date_of_birth: string | null;
     country_of_residence: string | null;
   } | null;
@@ -500,6 +501,7 @@ function toBookingDetail(raw: RawDetailRow): BookingDetail {
       phone: client?.phone ?? "",
       licenseNumber: client?.license_number ?? null,
       licenseExpiry: client?.license_expiry ?? null,
+      hasLicensePhoto: Boolean(client?.license_photo_path),
       dateOfBirth: client?.date_of_birth ?? null,
       countryOfResidence: client?.country_of_residence ?? null,
     },

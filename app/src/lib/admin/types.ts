@@ -200,6 +200,9 @@ export interface BookingDetail {
     phone: string;
     licenseNumber: string | null;
     licenseExpiry: string | null;
+    /** Whether a photo is attached. The object key itself never leaves the
+     *  server: the viewer asks for a signed link by client id. */
+    hasLicensePhoto: boolean;
     dateOfBirth: string | null;
     countryOfResidence: string | null;
   };
@@ -566,6 +569,7 @@ export interface ClientDetail {
   phone: string;
   licenseNumber: string | null;
   licenseExpiry: string | null;
+  hasLicensePhoto: boolean;
   dateOfBirth: string | null;
   countryOfResidence: string | null;
   createdAt: string;
@@ -917,4 +921,59 @@ export interface DashboardData {
     occupancyPct: number;
     cars: FleetStatusRow[];
   };
+}
+
+/* ── license photos ────────────────────────────────────────────────────────── */
+
+/**
+ * A short-lived signed link to a license photo, or why there is none.
+ *   none     no photo was ever attached to this client
+ *   missing  the record points at an object that is not in the bucket
+ */
+export type LicensePhotoLink =
+  | { status: "none" }
+  | { status: "missing" }
+  | {
+      status: "ok";
+      /** Opens inline. Dies at `expiresAt`. */
+      url: string;
+      /** Same object, served as an attachment with a readable file name. */
+      downloadUrl: string;
+      /** `heic` and `pdf` cannot be drawn as an <img> in most browsers. */
+      kind: "image" | "heic" | "pdf" | "other";
+      fileName: string;
+      /** Epoch milliseconds. */
+      expiresAt: number;
+    };
+
+/** One client on the Licenses page. */
+export interface LicenseRow {
+  clientId: string;
+  fullName: string;
+  email: string;
+  phone: string;
+  licenseNumber: string | null;
+  licenseExpiry: string | null;
+  licenceLevel: LicenceLevel;
+  hasPhoto: boolean;
+  /** Newest pickup first, cancellations included and marked. */
+  bookings: {
+    id: string;
+    ref: string;
+    pickupDate: string;
+    returnDate: string;
+    carLabel: string;
+    cancelled: boolean;
+  }[];
+}
+
+export interface LicensesListData {
+  query: string;
+  /** Rows matching the search, before the display limit. */
+  total: number;
+  /** Clients with any license detail on file, regardless of the search. */
+  onFile: number;
+  withPhoto: number;
+  truncated: boolean;
+  rows: LicenseRow[];
 }

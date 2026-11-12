@@ -21,6 +21,7 @@ import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { PrepAdvanceButton, PrepPipeline } from "../../../components/admin/prep-controls";
+import { LicensePhoto } from "../../../components/admin/license-photo";
 import AdminShell from "../../../components/admin/shell";
 import { Button, Field, Panel, StatusPill } from "../../../components/admin/ui";
 import {
@@ -400,6 +401,18 @@ function BookingDetailPage() {
               hint={licenceHint(booking)}
             />
             <Field label="Country" value={booking.client.countryOfResidence} />
+          </div>
+          {/* The license itself, beside its number and expiry above. Signed
+              for a minute at a time; see components/admin/license-photo. */}
+          <div className="border-t border-cw-navy/8 px-4 py-4">
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-cw-ink/50">
+              Licence photo
+            </p>
+            <LicensePhoto
+              clientId={booking.client.id}
+              hasPhoto={booking.client.hasLicensePhoto}
+              guestName={booking.client.fullName}
+            />
           </div>
         </Panel>
 

@@ -53,7 +53,7 @@ const CLIENT_FETCH_LIMIT = 2000;
 const DISPLAY_LIMIT = 200;
 
 const CLIENT_SELECT = `
-  id, full_name, email, phone, license_number, license_expiry,
+  id, full_name, email, phone, license_number, license_expiry, license_photo_path,
   date_of_birth, country_of_residence, created_at, updated_at
 `;
 
@@ -71,6 +71,7 @@ interface RawClient {
   phone: string;
   license_number: string | null;
   license_expiry: string | null;
+  license_photo_path: string | null;
   date_of_birth: string | null;
   country_of_residence: string | null;
   created_at: string;
@@ -399,6 +400,7 @@ export async function getClientDetail(clientId: string): Promise<ClientDetail | 
     phone: client.phone,
     licenseNumber: client.license_number,
     licenseExpiry: client.license_expiry,
+    hasLicensePhoto: Boolean(client.license_photo_path),
     dateOfBirth: client.date_of_birth,
     countryOfResidence: client.country_of_residence,
     createdAt: client.created_at,

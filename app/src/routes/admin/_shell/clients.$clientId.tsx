@@ -18,6 +18,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 
 import { LicenceBadge, RepeatBadge } from "../../../components/admin/client-badges";
+import { LicensePhoto } from "../../../components/admin/license-photo";
 import AdminShell from "../../../components/admin/shell";
 import { EmptyState, Field, Panel, Stat, StatusPill, Td, Th } from "../../../components/admin/ui";
 import { fetchAdminClient } from "../../../lib/api/admin.functions";
@@ -178,6 +179,16 @@ function ClientPage() {
             <Field label="Country" value={client.countryOfResidence} />
             <Field label="On file since" value={formatInstant(client.createdAt)} />
             <Field label="Record updated" value={formatInstant(client.updatedAt)} />
+          </div>
+          <div className="border-t border-cw-navy/8 px-4 py-4">
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-cw-ink/50">
+              Licence photo
+            </p>
+            <LicensePhoto
+              clientId={client.id}
+              hasPhoto={client.hasLicensePhoto}
+              guestName={client.fullName}
+            />
           </div>
         </Panel>
 

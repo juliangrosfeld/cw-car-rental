@@ -25,6 +25,7 @@ import { Route as AdminShellClientsIndexRouteImport } from './routes/admin/_shel
 import { Route as AdminShellClientsClientIdRouteImport } from './routes/admin/_shell/clients.$clientId'
 import { Route as AdminShellFleetIndexRouteImport } from './routes/admin/_shell/fleet.index'
 import { Route as AdminShellFleetCarIdRouteImport } from './routes/admin/_shell/fleet.$carId'
+import { Route as AdminShellLicensesIndexRouteImport } from './routes/admin/_shell/licenses.index'
 import { Route as AdminShellPaymentsIndexRouteImport } from './routes/admin/_shell/payments.index'
 
 const IndexRoute = IndexRouteImport.update({
@@ -109,6 +110,11 @@ const AdminShellFleetCarIdRoute = AdminShellFleetCarIdRouteImport.update({
   path: '/fleet/$carId',
   getParentRoute: () => AdminShellRoute,
 } as any)
+const AdminShellLicensesIndexRoute = AdminShellLicensesIndexRouteImport.update({
+  id: '/licenses/',
+  path: '/licenses/',
+  getParentRoute: () => AdminShellRoute,
+} as any)
 const AdminShellPaymentsIndexRoute = AdminShellPaymentsIndexRouteImport.update({
   id: '/payments/',
   path: '/payments/',
@@ -132,6 +138,7 @@ export interface FileRoutesByFullPath {
   '/admin/bookings/': typeof AdminShellBookingsIndexRoute
   '/admin/clients/': typeof AdminShellClientsIndexRoute
   '/admin/fleet/': typeof AdminShellFleetIndexRoute
+  '/admin/licenses/': typeof AdminShellLicensesIndexRoute
   '/admin/payments/': typeof AdminShellPaymentsIndexRoute
 }
 export interface FileRoutesByTo {
@@ -150,6 +157,7 @@ export interface FileRoutesByTo {
   '/admin/bookings': typeof AdminShellBookingsIndexRoute
   '/admin/clients': typeof AdminShellClientsIndexRoute
   '/admin/fleet': typeof AdminShellFleetIndexRoute
+  '/admin/licenses': typeof AdminShellLicensesIndexRoute
   '/admin/payments': typeof AdminShellPaymentsIndexRoute
 }
 export interface FileRoutesById {
@@ -170,6 +178,7 @@ export interface FileRoutesById {
   '/admin/_shell/bookings/': typeof AdminShellBookingsIndexRoute
   '/admin/_shell/clients/': typeof AdminShellClientsIndexRoute
   '/admin/_shell/fleet/': typeof AdminShellFleetIndexRoute
+  '/admin/_shell/licenses/': typeof AdminShellLicensesIndexRoute
   '/admin/_shell/payments/': typeof AdminShellPaymentsIndexRoute
 }
 export interface FileRouteTypes {
@@ -191,6 +200,7 @@ export interface FileRouteTypes {
     | '/admin/bookings/'
     | '/admin/clients/'
     | '/admin/fleet/'
+    | '/admin/licenses/'
     | '/admin/payments/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -209,6 +219,7 @@ export interface FileRouteTypes {
     | '/admin/bookings'
     | '/admin/clients'
     | '/admin/fleet'
+    | '/admin/licenses'
     | '/admin/payments'
   id:
     | '__root__'
@@ -228,6 +239,7 @@ export interface FileRouteTypes {
     | '/admin/_shell/bookings/'
     | '/admin/_shell/clients/'
     | '/admin/_shell/fleet/'
+    | '/admin/_shell/licenses/'
     | '/admin/_shell/payments/'
   fileRoutesById: FileRoutesById
 }
@@ -356,6 +368,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminShellFleetCarIdRouteImport
       parentRoute: typeof AdminShellRoute
     }
+    '/admin/_shell/licenses/': {
+      id: '/admin/_shell/licenses/'
+      path: '/licenses'
+      fullPath: '/admin/licenses/'
+      preLoaderRoute: typeof AdminShellLicensesIndexRouteImport
+      parentRoute: typeof AdminShellRoute
+    }
     '/admin/_shell/payments/': {
       id: '/admin/_shell/payments/'
       path: '/payments'
@@ -375,6 +394,7 @@ interface AdminShellRouteChildren {
   AdminShellBookingsIndexRoute: typeof AdminShellBookingsIndexRoute
   AdminShellClientsIndexRoute: typeof AdminShellClientsIndexRoute
   AdminShellFleetIndexRoute: typeof AdminShellFleetIndexRoute
+  AdminShellLicensesIndexRoute: typeof AdminShellLicensesIndexRoute
   AdminShellPaymentsIndexRoute: typeof AdminShellPaymentsIndexRoute
 }
 
@@ -387,6 +407,7 @@ const AdminShellRouteChildren: AdminShellRouteChildren = {
   AdminShellBookingsIndexRoute: AdminShellBookingsIndexRoute,
   AdminShellClientsIndexRoute: AdminShellClientsIndexRoute,
   AdminShellFleetIndexRoute: AdminShellFleetIndexRoute,
+  AdminShellLicensesIndexRoute: AdminShellLicensesIndexRoute,
   AdminShellPaymentsIndexRoute: AdminShellPaymentsIndexRoute,
 }
 
