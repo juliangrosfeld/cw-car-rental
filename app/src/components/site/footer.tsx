@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { CONTACT, POSITIONING } from '../../content/brand'
+import { CONTACT, PHONE_HREF, POSITIONING } from '../../content/brand'
 
 /**
  * The navy dusk footer, the page's one material switch. Full name
@@ -37,7 +37,7 @@ export default function Footer() {
                 </a>
               </li>
               <li>
-                <a className="text-white/85 transition-colors hover:text-cw-peach" href={`tel:${CONTACT.phone.replace(/\s/g, '')}`}>
+                <a className="text-white/85 transition-colors hover:text-cw-peach" href={PHONE_HREF}>
                   {CONTACT.phone}
                 </a>
               </li>

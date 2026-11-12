@@ -20,17 +20,25 @@ export const FOUNDER_QUOTE =
   'I always loved seeing people enjoy the place I call home. Helping them explore it, that means a lot to me.'
 
 /**
- * Real contact details, confirmed with Clay. `phone` is the display form;
- * `whatsapp` is the same number in E.164, and wa.me links strip it to digits.
+ * Real contact details, confirmed with Clay. THE single source for the phone
+ * number: `phone` is the display form, `whatsapp` is the same number in E.164.
+ * Every tel: link, wa.me link, email and screen reads it from here (via
+ * PHONE_HREF and WHATSAPP_URL below), so changing the number is a one-line edit.
  * There is no Facebook page, so none is listed. `email` is still unconfirmed:
  * cwcarrental.com was not registered as of Oct 2026, so it cannot receive mail.
  */
 export const CONTACT = {
   email: 'hello@cwcarrental.com',
-  phone: '+599 9 527 8555',
-  whatsapp: '+59995278555',
+  phone: '+599 9 521 8775',
+  whatsapp: '+59995218775',
   instagram: 'https://www.instagram.com/cw_car_rentals/',
 }
+
+/** `tel:` target for CONTACT.phone. */
+export const PHONE_HREF = `tel:${CONTACT.whatsapp}`
+
+/** wa.me wants the number as bare digits, no plus. */
+export const WHATSAPP_URL = `https://wa.me/${CONTACT.whatsapp.replace(/\D/g, '')}`
 
 export interface Value {
   name: string

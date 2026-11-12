@@ -17,7 +17,7 @@
  * Everything interpolated into HTML goes through esc(): names, flight numbers
  * and special requests are typed by whoever is on the internet.
  */
-import { CONTACT } from "../../content/brand";
+import { WHATSAPP_URL } from "../../content/brand";
 import type { BookingConfirmation } from "../booking/availability.server";
 import {
   FULL_PRICE_NOTE,
@@ -43,8 +43,6 @@ const TEAL = "#118c8c";
 const TEAL_DARK = "#0c6b6b";
 const MINT_SOFT = "#eef7f3";
 const RULE = "#d9e3e7";
-
-const WHATSAPP_URL = `https://wa.me/${CONTACT.whatsapp.replace(/\D/g, "")}`;
 
 function esc(s: string): string {
   return s

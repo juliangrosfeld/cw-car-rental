@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, MotionConfig, motion } from 'framer-motion'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CONTACT, PICKUP_LOCATIONS } from '../../content/brand'
+import { CONTACT, PICKUP_LOCATIONS, WHATSAPP_URL } from '../../content/brand'
 import {
   createLicenseUpload,
   getAvailableCars,
@@ -84,8 +84,6 @@ const STEPS = ['Rental', 'Dates', 'Car', 'Details', 'Review', 'Confirm'] as cons
 
 /** Step indices, named. Six of them and a lot of `step === 3` reads badly. */
 const STEP = { TYPE: 0, DATES: 1, CAR: 2, DETAILS: 3, REVIEW: 4, PAY: 5 } as const
-
-const WHATSAPP_URL = `https://wa.me/${CONTACT.whatsapp.replace(/\D/g, '')}`
 
 interface Details {
   name: string
