@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, MotionConfig, motion } from 'framer-motion'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CONTACT, PICKUP_LOCATIONS, WHATSAPP_URL } from '../../content/brand'
+import {
+  CONTACT,
+  LOCATION_HELPER,
+  LOCATION_MAX_LENGTH,
+  PICKUP_LOCATIONS,
+  WHATSAPP_URL,
+  isUnfinishedLocation,
+} from '../../content/brand'
 import {
   createLicenseUpload,
   getAvailableCars,
@@ -134,7 +141,10 @@ export default function BookingWizard({ initialCarId }: { initialCarId?: string 
   const [rentalType, setRentalType] = useState<RentalType>('daily')
   const [start, setStart] = useState<Date | undefined>()
   const [end, setEnd] = useState<Date | undefined>()
-  const [location, setLocation] = useState(PICKUP_LOCATIONS[0].id)
+  /** Free text: the address we bring the car to. Starts on the airport, the
+   *  usual delivery point, so the common case needs no typing. */
+  const [pickup, setPickup] = useState(PICKUP_LOCATIONS[0].fill)
+  const [pickupError, setPickupError] = useState<string | undefined>()
   /** '' until chosen. Chosen on the car step, from the times that car still
    *  has free on these dates (see slotsForCar below). */
   const [pickupTime, setPickupTime] = useState('')
@@ -245,7 +255,6 @@ export default function BookingWizard({ initialCarId }: { initialCarId?: string 
       setReturnTime('')
     }
   }, [slotsForCar, pickupTime, returnTime])
-  const locationLabel = PICKUP_LOCATIONS.find((l) => l.id === location)?.label ?? ''
 
   /** The same function the server prices with, on the same inputs. Undefined
    *  until there is a car and a usable range; a refusal (too short, too long,
@@ -277,7 +286,7 @@ export default function BookingWizard({ initialCarId }: { initialCarId?: string 
           email: details.email,
           phone: details.phone,
           country: details.country,
-          pickupLocation: locationLabel,
+          pickupLocation: pickup.trim(),
           returnLocation: dropoff.trim(),
           flightNumber: details.flight || null,
           specialRequests: details.note || null,
@@ -356,11 +365,16 @@ export default function BookingWizard({ initialCarId }: { initialCarId?: string 
 
   const continueFromDates = () => {
     if (!datesUsable) return
-    if (!dropoff.trim()) {
-      setDropoffError('Tell us where we should collect the car at the end.')
-      return
-    }
-    setDropoffError(undefined)
+    // Both addresses are required. Checked together so a guest who left both
+    // empty sees both messages at once, not one per click.
+    const pickupProblem = locationProblem(pickup, 'Tell us where we should bring the car.')
+    const dropoffProblem = locationProblem(
+      dropoff,
+      'Tell us where we should collect the car at the end.',
+    )
+    setPickupError(pickupProblem)
+    setDropoffError(dropoffProblem)
+    if (pickupProblem || dropoffProblem) return
     setDateNotice(undefined)
     // Dates changed under a chosen car: keep progress, flag the car step.
     if (carId && !split.available.some((c) => c.id === carId)) {
@@ -466,7 +480,8 @@ export default function BookingWizard({ initialCarId }: { initialCarId?: string 
                   start={start}
                   end={endKey ? fromKey(endKey) : undefined}
                   days={selectedDays}
-                  location={location}
+                  pickup={pickup}
+                  pickupError={pickupError}
                   busy={busy}
                   carIds={carIds}
                   loading={fleetQuery.isPending}
@@ -481,10 +496,13 @@ export default function BookingWizard({ initialCarId }: { initialCarId?: string 
                     setEnd(e)
                     setDateNotice(undefined)
                   }}
-                  onLocation={setLocation}
+                  onPickup={(v) => {
+                    setPickup(v)
+                    setPickupError(undefined)
+                  }}
                   onDropoff={(v) => {
                     setDropoff(v)
-                    if (v.trim()) setDropoffError(undefined)
+                    setDropoffError(undefined)
                   }}
                   onContinue={continueFromDates}
                 />
@@ -542,7 +560,7 @@ export default function BookingWizard({ initialCarId }: { initialCarId?: string 
                   start={fromKey(startKey)}
                   end={fromKey(endKey)}
                   quote={currentQuote}
-                  locationLabel={locationLabel}
+                  pickup={pickup.trim()}
                   dropoff={dropoff.trim()}
                   pickupTime={pickupTime}
                   returnTime={returnTime}
@@ -783,7 +801,8 @@ function DatesStep({
   start,
   end,
   days,
-  location,
+  pickup,
+  pickupError,
   busy,
   carIds,
   loading,
@@ -794,7 +813,7 @@ function DatesStep({
   dropoff,
   dropoffError,
   onDates,
-  onLocation,
+  onPickup,
   onDropoff,
   onContinue,
 }: {
@@ -802,7 +821,8 @@ function DatesStep({
   start?: Date
   end?: Date
   days: number
-  location: string
+  pickup: string
+  pickupError?: string
   busy: readonly BusyRange[]
   carIds: readonly string[]
   loading: boolean
@@ -813,7 +833,7 @@ function DatesStep({
   dropoff: string
   dropoffError?: string
   onDates: (s?: Date, e?: Date) => void
-  onLocation: (id: string) => void
+  onPickup: (v: string) => void
   onDropoff: (v: string) => void
   onContinue: () => void
 }) {
@@ -845,37 +865,24 @@ function DatesStep({
           />
         </div>
         <div>
-          <label htmlFor="pickup-location" className="block font-display text-sm font-bold text-cw-navy">
-            Pickup location
-          </label>
-          <select
+          <LocationField
             id="pickup-location"
-            value={location}
-            onChange={(e) => onLocation(e.target.value)}
-            className="mt-2 w-full rounded-xl border-2 border-cw-navy/15 bg-white px-4 py-3 text-[15px] text-cw-ink transition-colors focus:border-cw-teal focus:outline-none"
-          >
-            {PICKUP_LOCATIONS.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.label}
-              </option>
-            ))}
-          </select>
+            label="Pickup location"
+            placeholder="Where should we bring the car?"
+            value={pickup}
+            error={pickupError}
+            onChange={onPickup}
+          />
 
           <div className="mt-5">
-            <Field id="dropoff-location" label="Drop-off location" error={dropoffError}>
-              <input
-                id="dropoff-location"
-                value={dropoff}
-                onChange={(e) => onDropoff(e.target.value)}
-                placeholder="Where should we pick up the car?"
-                autoComplete="street-address"
-                maxLength={200}
-                className={inputClass(!!dropoffError)}
-              />
-            </Field>
-            <p className="mt-1.5 text-xs text-cw-ink/60">
-              Your hotel, villa or an address. We come to you at the end of your rental.
-            </p>
+            <LocationField
+              id="dropoff-location"
+              label="Drop-off location"
+              placeholder="Where should we collect the car?"
+              value={dropoff}
+              error={dropoffError}
+              onChange={onDropoff}
+            />
           </div>
 
           <div className="mt-6 rounded-xl bg-cw-mint-soft p-4 text-sm leading-relaxed text-cw-ink/80">
@@ -916,6 +923,90 @@ function DatesStep({
       ) : (
         <ContinueButton label="Continue" disabled={!canContinue || loading} onClick={onContinue} />
       )}
+    </div>
+  )
+}
+
+/** Why an address cannot be used yet, or undefined when it can. The server
+ *  applies the same rules (required, trimmed, bounded); this is so the guest
+ *  hears about it on this step rather than at the very end. */
+function locationProblem(value: string, emptyMessage: string): string | undefined {
+  const trimmed = value.trim()
+  if (!trimmed) return emptyMessage
+  if (isUnfinishedLocation(trimmed)) return 'Add the name of your hotel.'
+  if (trimmed.length > LOCATION_MAX_LENGTH)
+    return `Keep it under ${LOCATION_MAX_LENGTH} characters.`
+  return undefined
+}
+
+/**
+ * A pickup or drop-off address: free text, anywhere on the island, with the
+ * three usual answers as chips that fill the field in. The chips are shortcuts,
+ * not options; whatever is in the box is what is booked.
+ *
+ * No maxLength on the input on purpose: silently refusing the 201st character
+ * of a pasted address would leave it cut off mid-word with no explanation. The
+ * limit is reported as an error instead.
+ */
+function LocationField({
+  id,
+  label,
+  placeholder,
+  value,
+  error,
+  onChange,
+}: {
+  id: string
+  label: string
+  placeholder: string
+  value: string
+  error?: string
+  onChange: (v: string) => void
+}) {
+  const tooLong = value.trim().length > LOCATION_MAX_LENGTH
+  const message =
+    error ?? (tooLong ? `Keep it under ${LOCATION_MAX_LENGTH} characters.` : undefined)
+  return (
+    <div>
+      <Field id={id} label={label} error={message}>
+        <input
+          id={id}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          autoComplete="off"
+          aria-describedby={`${id}-help`}
+          className={inputClass(!!message)}
+        />
+      </Field>
+      <p id={`${id}-help`} className="mt-1.5 text-xs text-cw-ink/60">
+        {LOCATION_HELPER}
+      </p>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {PICKUP_LOCATIONS.map((l) => {
+          const active = value.trim() === l.fill.trim()
+          return (
+            <button
+              key={l.id}
+              type="button"
+              aria-pressed={active}
+              onClick={() => {
+                onChange(l.fill)
+                // The hotel chip writes a prefix to finish, so put the cursor
+                // back in the box rather than leaving it on the chip.
+                document.getElementById(id)?.focus()
+              }}
+              className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
+                active
+                  ? 'border-cw-teal bg-cw-teal-soft text-cw-teal-dark'
+                  : 'border-cw-navy/15 bg-white text-cw-ink/75 hover:border-cw-teal hover:text-cw-teal'
+              }`}
+            >
+              {l.chip}
+            </button>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -1437,7 +1528,7 @@ function ReviewStep({
   start,
   end,
   quote: q,
-  locationLabel,
+  pickup,
   dropoff,
   pickupTime,
   returnTime,
@@ -1451,7 +1542,7 @@ function ReviewStep({
   start: Date
   end: Date
   quote: Quote
-  locationLabel: string
+  pickup: string
   dropoff: string
   pickupTime: string
   returnTime: string
@@ -1476,7 +1567,7 @@ function ReviewStep({
             : `By the day · ${q.days} ${q.days === 1 ? 'day' : 'days'}`}
         </ReviewRow>
         <ReviewRow label="Pickup" onEdit={() => onEdit(STEP.DATES)}>
-          {fmtDay(start)} · {locationLabel}
+          {fmtDay(start)} · {pickup}
         </ReviewRow>
         <ReviewRow label="Drop-off" onEdit={() => onEdit(STEP.DATES)}>
           {fmtDay(end)} · {dropoff}

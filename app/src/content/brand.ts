@@ -225,14 +225,61 @@ export const TESTIMONIALS: Testimonial[] = [
 
 export interface PickupLocation {
   id: string
+  /** What an old booking that stored the bare `id` is displayed as. */
   label: string
+  /** The quick-fill chip's own short text. */
+  chip: string
+  /** What tapping the chip writes into the address field. The hotel chip
+   *  writes a prefix for the guest to finish, since "your hotel" is not an
+   *  address anyone can drive to. */
+  fill: string
 }
 
+/**
+ * Pickup and drop-off are FREE-TEXT addresses anywhere in Curaçao (Terms 5.2:
+ * CW delivers and collects anywhere on the island). These three are only
+ * quick-fill chips beside the field, for the answers most guests give.
+ */
 export const PICKUP_LOCATIONS: PickupLocation[] = [
-  { id: 'airport', label: 'Curaçao International Airport (CUR)' },
-  { id: 'willemstad', label: 'Willemstad, Punda or Otrobanda' },
-  { id: 'hotel', label: 'Your hotel or resort' },
+  {
+    id: 'airport',
+    label: 'Curaçao International Airport (CUR)',
+    chip: 'Airport (CUR)',
+    fill: 'Curaçao International Airport (CUR)',
+  },
+  {
+    id: 'willemstad',
+    label: 'Willemstad, Punda or Otrobanda',
+    chip: 'Willemstad',
+    fill: 'Willemstad',
+  },
+  { id: 'hotel', label: 'Your hotel or resort', chip: 'Your hotel', fill: 'Hotel: ' },
 ]
+
+/** Longest address the booking form and the server accept. */
+export const LOCATION_MAX_LENGTH = 200
+
+/** Shown under both address fields. */
+export const LOCATION_HELPER = 'Anywhere in Curaçao'
+
+/**
+ * A stored pickup or drop-off location, as it should be shown.
+ *
+ * Locations are free text now, but the field was once a dropdown, and a booking
+ * that stored the option's id ("airport") must not be shown to Clay or a guest
+ * as that bare word. Anything that is not one of those ids is already an
+ * address and is returned as written. Use this at every place a booking's
+ * location is read for display.
+ */
+export function locationLabel(stored: string | null | undefined): string {
+  const value = (stored ?? '').trim()
+  return PICKUP_LOCATIONS.find((l) => l.id === value.toLowerCase())?.label ?? value
+}
+
+/** True when the hotel chip's prefix was left unfinished ("Hotel:"). */
+export function isUnfinishedLocation(value: string): boolean {
+  return /^hotel\s*:?\s*$/i.test(value.trim())
+}
 
 /** Island waypoints for the About page. Real places, local tone. */
 export const WAYPOINTS = [

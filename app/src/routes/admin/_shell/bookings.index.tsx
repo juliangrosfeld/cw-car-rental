@@ -349,12 +349,21 @@ function BookingsPage() {
                         </Td>
                         <Td className="whitespace-nowrap text-cw-ink/70">
                           {formatDateShort(b.pickupDate)}, {formatTime(b.pickupTime)}
-                          <span className="block text-[11px] text-cw-ink/45">
+                          <span
+                            className="block max-w-[220px] truncate text-[11px] text-cw-ink/45"
+                            title={b.pickupLocation}
+                          >
                             {b.pickupLocation}
                           </span>
                         </Td>
                         <Td className="whitespace-nowrap text-cw-ink/70">
                           {formatDateShort(b.returnDate)}, {formatTime(b.returnTime)}
+                          <span
+                            className="block max-w-[220px] truncate text-[11px] text-cw-ink/45"
+                            title={b.returnLocation}
+                          >
+                            {b.returnLocation}
+                          </span>
                           <span className="block text-[11px] text-cw-ink/45">
                             {b.days} {b.days === 1 ? "day" : "days"}
                           </span>

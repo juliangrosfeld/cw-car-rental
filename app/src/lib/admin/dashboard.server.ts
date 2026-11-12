@@ -34,6 +34,7 @@
  * cheap. If it ever stops being cheap, the fix is a Postgres view or an RPC —
  * not pagination here.
  */
+import { locationLabel } from "../../content/brand";
 import { supabaseAdmin } from "../supabase/admin.server";
 import { rentalDays } from "../booking/rental";
 import type { BookingStatus, PaymentStatus, PrepStatus, VehicleStatus } from "../supabase/types";
@@ -135,8 +136,8 @@ function toBookingRow(raw: RawBookingRow): BookingRow {
     pickupTime: raw.pickup_time,
     returnDate: raw.return_date,
     returnTime: raw.return_time,
-    pickupLocation: raw.pickup_location,
-    returnLocation: raw.return_location,
+    pickupLocation: locationLabel(raw.pickup_location),
+    returnLocation: locationLabel(raw.return_location),
     days: rentalDays(raw.pickup_date, raw.return_date),
     totalCents: raw.total_price,
     bookingStatus: raw.booking_status,
@@ -160,7 +161,7 @@ function toMovement(raw: RawBookingRow, kind: MovementRow["kind"], today: string
     clientPhone: raw.clients?.phone ?? "",
     carLabel: carLabel(raw.cars),
     vehicleLabel: unitLabel(raw.vehicles),
-    location: kind === "pickup" ? raw.pickup_location : raw.return_location,
+    location: locationLabel(kind === "pickup" ? raw.pickup_location : raw.return_location),
     bookingStatus: raw.booking_status,
     paymentStatus: raw.payment_status,
     daysAway: daysBetween(today, date),

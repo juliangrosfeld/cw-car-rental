@@ -42,6 +42,7 @@
  *    overwritten by the trigger anyway, and would go stale the moment someone
  *    edits a row from SQL or a future phase adds another write path.
  */
+import { locationLabel } from "../../content/brand";
 import { supabaseAdmin } from "../supabase/admin.server";
 import {
   PICKUP_TIME,
@@ -191,8 +192,8 @@ function toBookingRow(raw: RawListRow): BookingRow {
     pickupTime: raw.pickup_time,
     returnDate: raw.return_date,
     returnTime: raw.return_time,
-    pickupLocation: raw.pickup_location,
-    returnLocation: raw.return_location,
+    pickupLocation: locationLabel(raw.pickup_location),
+    returnLocation: locationLabel(raw.return_location),
     days: rentalDays(raw.pickup_date, raw.return_date),
     totalCents: raw.total_price,
     bookingStatus: raw.booking_status,
@@ -527,10 +528,10 @@ function toBookingDetail(raw: RawDetailRow): BookingDetail {
     },
     pickupDate: raw.pickup_date,
     pickupTime: raw.pickup_time,
-    pickupLocation: raw.pickup_location,
+    pickupLocation: locationLabel(raw.pickup_location),
     returnDate: raw.return_date,
     returnTime: raw.return_time,
-    returnLocation: raw.return_location,
+    returnLocation: locationLabel(raw.return_location),
     flightNumber: raw.flight_number,
     days,
     rentalType: raw.rental_type,
@@ -953,8 +954,8 @@ export async function createManualBooking(input: ManualBookingInput): Promise<Ma
       pickup_time: PICKUP_TIME,
       return_date: window.returnDate,
       return_time: RETURN_TIME,
-      pickup_location: input.pickupLocation,
-      return_location: input.returnLocation,
+      pickup_location: input.pickupLocation.trim(),
+      return_location: input.returnLocation.trim(),
       flight_number: input.flightNumber?.trim() || null,
       total_price: quote.totalCents,
       rental_type: quote.rentalType,

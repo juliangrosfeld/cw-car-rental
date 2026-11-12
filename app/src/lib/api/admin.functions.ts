@@ -46,6 +46,7 @@ import { PAYMENT_METHODS } from "../admin/payments";
 import { STATS_WINDOWS, type StatsWindow } from "../admin/fleet";
 import { PREP_FLOW } from "../admin/prep";
 import { RENTAL_TYPES } from "../booking/rental";
+import { LOCATION_MAX_LENGTH } from "../../content/brand";
 import { isCountry } from "../../content/countries";
 import { PAYMENT_STATUS, VEHICLE_STATUS } from "../supabase/types";
 import type { BookingFilters, ClientFilter, PaymentsFilter } from "../admin/types";
@@ -473,8 +474,16 @@ export const createBookingManually = createServerFn({ method: "POST" })
       rentalType: z.enum(RENTAL_TYPES),
       pickupDate: dateKeySchema,
       returnDate: dateKeySchema.nullish(),
-      pickupLocation: z.string().trim().min(1, "Where are they collecting?").max(200),
-      returnLocation: z.string().trim().min(1, "Where are they returning it?").max(200),
+      pickupLocation: z
+        .string()
+        .trim()
+        .min(1, "Where are they collecting?")
+        .max(LOCATION_MAX_LENGTH, `Keep the pickup address under ${LOCATION_MAX_LENGTH} characters.`),
+      returnLocation: z
+        .string()
+        .trim()
+        .min(1, "Where are they returning it?")
+        .max(LOCATION_MAX_LENGTH, `Keep the return address under ${LOCATION_MAX_LENGTH} characters.`),
       flightNumber: z.string().trim().max(20).nullish(),
       specialRequests: z.string().max(2000).nullish(),
       adminNotes: z.string().max(5000).nullish(),

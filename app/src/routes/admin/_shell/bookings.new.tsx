@@ -40,7 +40,11 @@ import {
   rentalDays,
   type RentalType,
 } from "../../../lib/booking/rental";
-import { PICKUP_LOCATIONS } from "../../../content/brand";
+import {
+  LOCATION_HELPER,
+  LOCATION_MAX_LENGTH,
+  PICKUP_LOCATIONS,
+} from "../../../content/brand";
 import type { ManualBookingVehicle } from "../../../lib/admin/types";
 import type { PaymentStatus } from "../../../lib/supabase/types";
 
@@ -104,6 +108,50 @@ function VehicleNote({ vehicle }: { vehicle: ManualBookingVehicle }) {
   return <span className="text-[11px] font-semibold text-[#1a7a45]">Free for these dates</span>;
 }
 
+/** A free-text address with the usual answers as quick-fill chips, the same
+ *  shape the public wizard uses. Whatever is in the box is what is saved. */
+function LocationInput({
+  id,
+  label,
+  value,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div>
+      <label htmlFor={id} className={labelClass}>
+        {label}
+      </label>
+      <input
+        id={id}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={`mt-1 ${inputClass}`}
+      />
+      <span className="mt-1 block text-[11px] text-cw-ink/50">{LOCATION_HELPER}</span>
+      <span className="mt-1.5 flex flex-wrap gap-1.5">
+        {PICKUP_LOCATIONS.map((l) => (
+          <button
+            key={l.id}
+            type="button"
+            onClick={() => {
+              onChange(l.fill);
+              document.getElementById(id)?.focus();
+            }}
+            className="rounded-full border border-cw-navy/15 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-cw-ink/70 transition-colors hover:border-cw-teal hover:text-cw-teal"
+          >
+            {l.chip}
+          </button>
+        ))}
+      </span>
+    </div>
+  );
+}
+
 function NewBookingPage() {
   const { admin, options } = Route.useLoaderData();
   const search = Route.useSearch();
@@ -121,8 +169,8 @@ function NewBookingPage() {
   const [guestEmail, setGuestEmail] = useState("");
   const [guestPhone, setGuestPhone] = useState("");
   const [guestCountry, setGuestCountry] = useState("");
-  const [pickupLocation, setPickupLocation] = useState(PICKUP_LOCATIONS[0].label);
-  const [returnLocation, setReturnLocation] = useState(PICKUP_LOCATIONS[0].label);
+  const [pickupLocation, setPickupLocation] = useState(PICKUP_LOCATIONS[0].fill);
+  const [returnLocation, setReturnLocation] = useState(PICKUP_LOCATIONS[0].fill);
   const [flightNumber, setFlightNumber] = useState("");
   const [specialRequests, setSpecialRequests] = useState("");
   const [adminNotes, setAdminNotes] = useState("");
@@ -172,6 +220,17 @@ function NewBookingPage() {
     }
     if (useExistingClient && !clientId) {
       setError("Pick the guest, or switch to entering a new one.");
+      return;
+    }
+    if (!pickupLocation.trim() || !returnLocation.trim()) {
+      setError("Enter both the pickup and the return location.");
+      return;
+    }
+    if (
+      pickupLocation.trim().length > LOCATION_MAX_LENGTH ||
+      returnLocation.trim().length > LOCATION_MAX_LENGTH
+    ) {
+      setError(`Keep each location under ${LOCATION_MAX_LENGTH} characters.`);
       return;
     }
 
@@ -445,34 +504,18 @@ function NewBookingPage() {
           {/* ── handover ──────────────────────────────────────────────── */}
           <Panel title="Handover and notes">
             <div className="grid gap-3 px-4 py-4 sm:grid-cols-2">
-              <label className="block">
-                <span className={labelClass}>Pickup location</span>
-                <select
-                  value={pickupLocation}
-                  onChange={(e) => setPickupLocation(e.target.value)}
-                  className={`mt-1 ${inputClass}`}
-                >
-                  {PICKUP_LOCATIONS.map((l) => (
-                    <option key={l.id} value={l.label}>
-                      {l.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block">
-                <span className={labelClass}>Return location</span>
-                <select
-                  value={returnLocation}
-                  onChange={(e) => setReturnLocation(e.target.value)}
-                  className={`mt-1 ${inputClass}`}
-                >
-                  {PICKUP_LOCATIONS.map((l) => (
-                    <option key={l.id} value={l.label}>
-                      {l.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <LocationInput
+                id="nb-pickup-location"
+                label="Pickup location"
+                value={pickupLocation}
+                onChange={setPickupLocation}
+              />
+              <LocationInput
+                id="nb-return-location"
+                label="Return location"
+                value={returnLocation}
+                onChange={setReturnLocation}
+              />
               <label className="block">
                 <span className={labelClass}>Flight number</span>
                 <input

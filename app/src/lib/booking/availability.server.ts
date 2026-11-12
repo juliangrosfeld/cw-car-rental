@@ -44,6 +44,7 @@
  *   `assignVehicle` below for why that preference is not cosmetic and how the
  *   loop stays safe under a race.
  */
+import { locationLabel } from "../../content/brand";
 import { supabaseAdmin } from "../supabase/admin.server";
 import { LICENSE_BUCKET, LICENSE_PHOTO_PATH_RE, LICENSE_PHOTO_TYPES } from "./license";
 import type { Booking, Car, Client, NewBooking, Vehicle } from "../supabase/types";
@@ -726,8 +727,8 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
     pickup_time: window.pickupTime,
     return_date: window.returnDate,
     return_time: window.returnTime,
-    pickup_location: input.pickupLocation,
-    return_location: input.returnLocation,
+    pickup_location: input.pickupLocation.trim(),
+    return_location: input.returnLocation.trim(),
     flight_number: input.flightNumber?.trim() || null,
     total_price: quote.totalCents,
     rental_type: quote.rentalType,
@@ -769,8 +770,8 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
       pickupTime: booking.pickup_time,
       returnDate: booking.return_date,
       returnTime: booking.return_time,
-      pickupLocation: booking.pickup_location,
-      returnLocation: booking.return_location,
+      pickupLocation: locationLabel(booking.pickup_location),
+      returnLocation: locationLabel(booking.return_location),
       flightNumber: booking.flight_number,
       rentalType: booking.rental_type,
       days: quote.days,
@@ -833,8 +834,8 @@ export async function getBookingConfirmation(
     pickupTime: data.pickup_time,
     returnDate: data.return_date,
     returnTime: data.return_time,
-    pickupLocation: data.pickup_location,
-    returnLocation: data.return_location,
+    pickupLocation: locationLabel(data.pickup_location),
+    returnLocation: locationLabel(data.return_location),
     flightNumber: data.flight_number,
     rentalType: data.rental_type,
     days,

@@ -33,6 +33,7 @@ import {
 } from "../booking/rental";
 import { LICENSE_PHOTO_PATH_RE, LICENSE_PHOTO_TYPES } from "../booking/license";
 import { notifyNewBooking } from "../email/notify-booking.server";
+import { LOCATION_MAX_LENGTH } from "../../content/brand";
 import { isCountry } from "../../content/countries";
 import type { Car } from "../supabase/types";
 
@@ -170,8 +171,18 @@ const submitSchema = requestSchema.and(
     // column is read by people, and "Holland", "NL" and "the netherlands" as
     // three different values would make it useless to filter on.
     country: z.string().refine(isCountry, "Pick your country from the list."),
-    pickupLocation: z.string().min(1),
-    returnLocation: z.string().trim().min(1, "Tell us where to collect the car.").max(200),
+    // Both are free-text addresses anywhere in Curaçao: required, trimmed, and
+    // bounded so a pasted essay cannot land in the column.
+    pickupLocation: z
+      .string()
+      .trim()
+      .min(1, "Tell us where to bring the car.")
+      .max(LOCATION_MAX_LENGTH, `Keep the pickup address under ${LOCATION_MAX_LENGTH} characters.`),
+    returnLocation: z
+      .string()
+      .trim()
+      .min(1, "Tell us where to collect the car.")
+      .max(LOCATION_MAX_LENGTH, `Keep the drop-off address under ${LOCATION_MAX_LENGTH} characters.`),
     flightNumber: z.string().max(20).optional().nullable(),
     specialRequests: z.string().max(2000).optional().nullable(),
     license: z.object({
