@@ -40,6 +40,7 @@ import {
   confirmationCopy,
   confirmationRows,
 } from '../../lib/booking/confirmation-copy'
+import { TERMS_ACCEPT_LABEL, TERMS_LINK_LABEL } from '../../content/legal/terms'
 import { CURRENCY_CODE } from '../../lib/money'
 import { supabase } from '../../lib/supabase/client'
 import Calendar from './calendar'
@@ -141,6 +142,8 @@ export default function BookingWizard({ initialCarId }: { initialCarId?: string 
   const [photo, setPhoto] = useState<LicensePhoto>({ status: 'idle' })
   const [errors, setErrors] = useState<Partial<Record<keyof Details, string>>>({})
   const [confirmation, setConfirmation] = useState<Confirmed | undefined>()
+  /** The Terms & Conditions box on the review step. Never pre-ticked. */
+  const [acceptedTerms, setAcceptedTerms] = useState(false)
 
   /* ---- live fleet + occupied ranges ---- */
   const fleetQuery = useQuery({
@@ -275,6 +278,10 @@ export default function BookingWizard({ initialCarId }: { initialCarId?: string 
             expiry: details.licenseExpiry,
             photoPath: details.licensePhotoPath,
           },
+          // Cast is honest: the mutation only runs from the Pay step, which is
+          // unreachable without the box ticked, and the server refuses anything
+          // but `true` regardless.
+          acceptedTerms: acceptedTerms as true,
         },
       }),
     onSuccess: (result) => {
@@ -531,10 +538,12 @@ export default function BookingWizard({ initialCarId }: { initialCarId?: string 
                   pickupTime={pickupTime}
                   returnTime={returnTime}
                   details={details}
+                  acceptedTerms={acceptedTerms}
+                  onAcceptTerms={setAcceptedTerms}
                   onEdit={goTo}
-                  onContinue={() => advance(STEP.PAY)}
+                  onContinue={() => acceptedTerms && advance(STEP.PAY)}
                 />
-              ) : step === STEP.PAY && car && startKey && endKey && currentQuote && timesChosen ? (
+              ) : step === STEP.PAY && car && startKey && endKey && currentQuote && timesChosen && acceptedTerms ? (
                 <PayStep
                   car={car}
                   start={fromKey(startKey)}
@@ -1412,6 +1421,8 @@ function ReviewStep({
   pickupTime,
   returnTime,
   details,
+  acceptedTerms,
+  onAcceptTerms,
   onEdit,
   onContinue,
 }: {
@@ -1424,9 +1435,14 @@ function ReviewStep({
   pickupTime: string
   returnTime: string
   details: Details
+  acceptedTerms: boolean
+  onAcceptTerms: (accepted: boolean) => void
   onEdit: (step: number) => void
   onContinue: () => void
 }) {
+  /** Shown only after a Continue without the box: nagging before the guest has
+   *  even reached the checkbox would be noise. */
+  const [termsError, setTermsError] = useState(false)
   const tier = DISCOUNT_TIERS.find((t) => t.pct === q.discountPct)
   return (
     <div>
@@ -1513,7 +1529,56 @@ function ReviewStep({
         )}
       </div>
 
-      <ContinueButton label="Continue" onClick={onContinue} />
+      {/* Required. The label text is fixed (TERMS_ACCEPT_LABEL); the link sits
+          beside it rather than inside it, so tapping the link never toggles the
+          box and tapping the sentence always does. */}
+      <div className="mt-7">
+        <div className="flex items-start gap-3">
+          <input
+            id="bk-accept-terms"
+            type="checkbox"
+            checked={acceptedTerms}
+            onChange={(e) => {
+              onAcceptTerms(e.target.checked)
+              if (e.target.checked) setTermsError(false)
+            }}
+            aria-invalid={termsError || undefined}
+            aria-describedby={termsError ? 'bk-accept-terms-error' : undefined}
+            className="mt-0.5 h-5 w-5 shrink-0 cursor-pointer rounded border-2 border-cw-navy/30 accent-cw-teal"
+          />
+          <p className="text-[15px] leading-snug text-cw-ink/90">
+            <label htmlFor="bk-accept-terms" className="cursor-pointer">
+              {TERMS_ACCEPT_LABEL}
+            </label>{' '}
+            <a
+              href="/terms"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="whitespace-nowrap font-semibold text-cw-teal underline decoration-cw-teal/40 underline-offset-4 hover:text-cw-teal-dark"
+            >
+              {TERMS_LINK_LABEL}
+            </a>
+          </p>
+        </div>
+        {termsError && (
+          <p id="bk-accept-terms-error" className="mt-2 text-sm font-semibold text-[#b3271d]">
+            Please tick the box to accept the Terms & Conditions before you book.
+          </p>
+        )}
+      </div>
+
+      {/* Stays clickable when the box is empty so the click can explain itself;
+          a dead button would leave the guest hunting for what is missing. */}
+      <ContinueButton
+        label="Continue"
+        onClick={() => {
+          if (!acceptedTerms) {
+            setTermsError(true)
+            return
+          }
+          onContinue()
+        }}
+      />
     </div>
   )
 }

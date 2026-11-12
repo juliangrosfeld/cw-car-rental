@@ -174,6 +174,12 @@ const submitSchema = requestSchema.and(
       expiry: dateSchema,
       photoPath: z.string().regex(LICENSE_PHOTO_PATH_RE, "Please upload your license photo again."),
     }),
+    // A literal, not a boolean: `false` and a missing field are both refused,
+    // so no request can create a booking without the acceptance on it. The
+    // wizard's checkbox is the convenience; this is the rule.
+    acceptedTerms: z.literal(true, {
+      error: "Please accept the Terms & Conditions to book.",
+    }),
   }),
 );
 

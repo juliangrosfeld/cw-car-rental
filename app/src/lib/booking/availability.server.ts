@@ -516,6 +516,9 @@ export interface CreateBookingInput {
   flightNumber?: string | null;
   specialRequests?: string | null;
   license: DriverLicense;
+  /** The guest ticked the Terms & Conditions box. The endpoint's schema only
+   *  lets `true` through; typed as the literal so no other caller can forget. */
+  acceptedTerms: true;
 }
 
 export interface BookingConfirmation {
@@ -724,6 +727,9 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
     discount_cents: quote.discountCents,
     special_requests: input.specialRequests?.trim() || null,
     booking_status: "confirmed",
+    // Stamped here, by the server's clock: when the acceptance was received,
+    // not when a browser says it was given.
+    accepted_terms_at: new Date().toISOString(),
   });
 
   if (!assigned) {

@@ -14,6 +14,7 @@ import { Route as AboutRouteImport } from './routes/about'
 import { Route as BookingRouteImport } from './routes/booking'
 import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
+import { Route as TermsRouteImport } from './routes/terms'
 import { Route as AdminShellRouteImport } from './routes/admin/_shell'
 import { Route as AdminLoginRouteImport } from './routes/admin/login'
 import { Route as AdminShellIndexRouteImport } from './routes/admin/_shell/index'
@@ -49,6 +50,11 @@ const RobotsDottxtRoute = RobotsDottxtRouteImport.update({
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
   path: '/sitemap.xml',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminShellRoute = AdminShellRouteImport.update({
@@ -115,6 +121,7 @@ export interface FileRoutesByFullPath {
   '/booking': typeof BookingRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/terms': typeof TermsRoute
   '/admin': typeof AdminShellRouteWithChildren
   '/admin/login': typeof AdminLoginRoute
   '/admin/': typeof AdminShellIndexRoute
@@ -133,6 +140,7 @@ export interface FileRoutesByTo {
   '/booking': typeof BookingRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/terms': typeof TermsRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin': typeof AdminShellIndexRoute
   '/admin/bookings/$bookingId': typeof AdminShellBookingsBookingIdRoute
@@ -151,6 +159,7 @@ export interface FileRoutesById {
   '/booking': typeof BookingRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/terms': typeof TermsRoute
   '/admin/_shell': typeof AdminShellRouteWithChildren
   '/admin/login': typeof AdminLoginRoute
   '/admin/_shell/': typeof AdminShellIndexRoute
@@ -171,6 +180,7 @@ export interface FileRouteTypes {
     | '/booking'
     | '/robots.txt'
     | '/sitemap.xml'
+    | '/terms'
     | '/admin'
     | '/admin/login'
     | '/admin/'
@@ -189,6 +199,7 @@ export interface FileRouteTypes {
     | '/booking'
     | '/robots.txt'
     | '/sitemap.xml'
+    | '/terms'
     | '/admin/login'
     | '/admin'
     | '/admin/bookings/$bookingId'
@@ -206,6 +217,7 @@ export interface FileRouteTypes {
     | '/booking'
     | '/robots.txt'
     | '/sitemap.xml'
+    | '/terms'
     | '/admin/_shell'
     | '/admin/login'
     | '/admin/_shell/'
@@ -225,6 +237,7 @@ export interface RootRouteChildren {
   BookingRoute: typeof BookingRoute
   RobotsDottxtRoute: typeof RobotsDottxtRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  TermsRoute: typeof TermsRoute
   AdminShellRoute: typeof AdminShellRouteWithChildren
   AdminLoginRoute: typeof AdminLoginRoute
 }
@@ -264,6 +277,13 @@ declare module '@tanstack/react-router' {
       path: '/sitemap.xml'
       fullPath: '/sitemap.xml'
       preLoaderRoute: typeof SitemapDotxmlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/_shell': {
@@ -380,6 +400,7 @@ const rootRouteChildren: RootRouteChildren = {
   BookingRoute: BookingRoute,
   RobotsDottxtRoute: RobotsDottxtRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
+  TermsRoute: TermsRoute,
   AdminShellRoute: AdminShellRouteWithChildren,
   AdminLoginRoute: AdminLoginRoute,
 }

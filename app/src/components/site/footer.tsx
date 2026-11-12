@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import { CONTACT, PHONE_HREF, POSITIONING } from '../../content/brand'
+import { TERMS_LINK_LABEL } from '../../content/legal/terms'
 
 /**
  * The navy dusk footer, the page's one material switch. Full name
@@ -66,6 +67,11 @@ export default function Footer() {
 
         <div className="mt-12 flex flex-col items-start justify-between gap-3 border-t border-white/15 pt-6 text-[13px] text-white/55 md:flex-row md:items-center">
           <p>© 2026 CW Car Rental. Proudly local in Curaçao.</p>
+          <nav aria-label="Legal" className="flex flex-wrap gap-x-5 gap-y-2">
+            <Link className="text-white/75 underline decoration-white/30 underline-offset-4 transition-colors hover:text-cw-peach" to="/terms">
+              {TERMS_LINK_LABEL}
+            </Link>
+          </nav>
           <p>Masha danki for driving with us.</p>
         </div>
       </div>

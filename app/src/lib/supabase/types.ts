@@ -212,6 +212,9 @@ export interface Database {
           /** INTERNAL ONLY — never expose on a public route or in a guest email. */
           admin_notes: string | null;
           handled_by: string | null;
+          /** ISO instant the guest accepted the Terms & Conditions in the
+           *  wizard (0008). Null for admin-made and older bookings. */
+          accepted_terms_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -237,6 +240,7 @@ export interface Database {
           special_requests?: string | null;
           admin_notes?: string | null;
           handled_by?: string | null;
+          accepted_terms_at?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["bookings"]["Insert"]>;
         Relationships: [
