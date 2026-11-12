@@ -447,6 +447,9 @@ interface RawDetailRow {
   rental_type: RentalTypeValue;
   discount_pct: number;
   discount_cents: number;
+  price_override_cents: number | null;
+  price_override_note: string | null;
+  standard_price_cents: number | null;
   booking_status: BookingStatus;
   payment_status: PaymentStatus;
   prep_status: PrepStatus;
@@ -547,6 +550,13 @@ function toBookingDetail(raw: RawDetailRow): BookingDetail {
     // the detail view says so rather than recomputing a total nobody agreed to.
     quotedPerDayCents: Math.round((raw.total_price + raw.discount_cents) / days),
     totalCents: raw.total_price,
+    priceOverride:
+      raw.price_override_cents !== null
+        ? {
+            standardCents: raw.standard_price_cents ?? raw.total_price,
+            note: raw.price_override_note,
+          }
+        : null,
     bookingStatus: raw.booking_status,
     paymentStatus: raw.payment_status,
     prepStatus: raw.prep_status,
@@ -857,6 +867,9 @@ export interface ManualBookingInput {
   adminNotes: string | null;
   bookingStatus: Extract<BookingStatus, "pending" | "confirmed">;
   paymentStatus: PaymentStatus;
+  /** "Set own price": a custom total in cents and an optional reason. Null
+   *  means the price list applies. Only the admin endpoint can supply this. */
+  priceOverride: { totalCents: number; note: string | null } | null;
   /** The admin taking it, for the record. */
   handledBy: string | null;
 }
@@ -870,9 +883,11 @@ export interface ManualBookingInput {
  * identical, and identical for the same reasons:
  *
  *   THE PRICE still comes from quoteRental() with rates read here from the
- *   database. An operator cannot type a total any more than a guest can. If a
- *   deal needs a different number, it is recorded as what it is — a payment
- *   against the booking — rather than by quietly restating the price list.
+ *   database, unless the admin switched on "Set own price". Then their total
+ *   is what is charged, and the standard quote is stored beside it
+ *   (standard_price_cents) with their reason, so the booking page can say
+ *   "custom price, standard would have been X". The public path has no such
+ *   input and cannot reach this.
  *
  *   THE WINDOW of a monthly rental is still derived, so a manual monthly booking
  *   occupies the same 30 days it is priced for.
@@ -939,6 +954,16 @@ export async function createManualBooking(input: ManualBookingInput): Promise<Ma
   }
   const quote = priced.quote;
 
+  // 2b. "Set own price". The standard quote above is still computed, for two
+  //     reasons: its refusals (too short, no monthly rate) apply to a custom
+  //     price too, and the figure is stored beside the custom one so the
+  //     booking can always say what the price list would have charged.
+  const override = input.priceOverride;
+  if (override && !(Number.isInteger(override.totalCents) && override.totalCents > 0)) {
+    return { ok: false, reason: "invalid", message: "A custom price must be more than zero." };
+  }
+  const finalTotalCents = override ? override.totalCents : quote.totalCents;
+
   // 3. The guest: an existing record, or a new one.
   const clientId = await resolveClient(input);
   if (!clientId.ok) return clientId.error;
@@ -957,10 +982,15 @@ export async function createManualBooking(input: ManualBookingInput): Promise<Ma
       pickup_location: input.pickupLocation.trim(),
       return_location: input.returnLocation.trim(),
       flight_number: input.flightNumber?.trim() || null,
-      total_price: quote.totalCents,
+      total_price: finalTotalCents,
       rental_type: quote.rentalType,
-      discount_pct: quote.discountPct,
-      discount_cents: quote.discountCents,
+      // A hand-set price is not "the list price less a discount", so the
+      // discount columns stay at zero for it.
+      discount_pct: override ? 0 : quote.discountPct,
+      discount_cents: override ? 0 : quote.discountCents,
+      price_override_cents: override ? override.totalCents : null,
+      price_override_note: override ? override.note?.trim() || null : null,
+      standard_price_cents: override ? quote.totalCents : null,
       booking_status: input.bookingStatus,
       payment_status: input.paymentStatus,
       special_requests: input.specialRequests?.trim() || null,

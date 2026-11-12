@@ -90,8 +90,13 @@ function BookingDetailPage() {
   const monthly = booking.rentalType === "monthly";
   // Only meaningful for a daily rental: a monthly booking has no per-day price
   // to compare, so comparing one would manufacture a warning out of nothing.
-  const rateChanged = !monthly && booking.quotedPerDayCents !== booking.car.dailyRateCents;
-  const monthlyRateChanged = monthly && booking.totalCents !== booking.car.monthlyRateCents;
+  const custom = booking.priceOverride;
+  // A hand-set price is not a rate, so comparing it with today's price list
+  // would always "detect" a change that never happened.
+  const rateChanged =
+    !custom && !monthly && booking.quotedPerDayCents !== booking.car.dailyRateCents;
+  const monthlyRateChanged =
+    !custom && monthly && booking.totalCents !== booking.car.monthlyRateCents;
 
   return (
     <AdminShell
@@ -265,7 +270,12 @@ function BookingDetailPage() {
               {formatMoneyExact(booking.totalCents)}
             </p>
             <p className="mt-1 text-[12px] text-cw-ink/55">
-              {monthly ? (
+              {custom ? (
+                <>
+                  Set by hand for {booking.days} {booking.days === 1 ? "day" : "days"} when the
+                  booking was taken
+                </>
+              ) : monthly ? (
                 <>Flat monthly rate over {booking.days} days, quoted when the booking was taken</>
               ) : (
                 <>
@@ -274,6 +284,15 @@ function BookingDetailPage() {
                 </>
               )}
             </p>
+
+            {custom && (
+              <div className="mt-2 rounded-lg bg-cw-yellow-soft px-2.5 py-2 text-[12px] text-[#8a6a04]">
+                <p className="font-semibold">
+                  Custom price, standard would have been {formatMoneyExact(custom.standardCents)}
+                </p>
+                {custom.note && <p className="mt-1 whitespace-pre-wrap">Reason: {custom.note}</p>}
+              </div>
+            )}
 
             {/* The discount is shown as a line of arithmetic, not as a badge:
                 the useful question in the back office is "what did they pay and

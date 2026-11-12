@@ -10,12 +10,23 @@
  * Thursday, the guest asked for the one they had last time. So here the car is
  * NAMED, and nothing silently moves the guest off it.
  *
- * WHAT IS DELIBERATELY NOT NEGOTIABLE HERE
- *   THE PRICE. It comes from the same quoteRental() the website uses, with rates
- *   read from the database. An operator cannot type a total any more than a
- *   guest can. A genuinely different deal is recorded as what it is — a payment
- *   against the booking — rather than by quietly restating the price list.
+ * THE PRICE, AND "SET OWN PRICE"
+ *   By default the price comes from the same quoteRental() the website uses,
+ *   with rates read from the database, and nothing can be typed.
  *
+ *   "Set own price" is the one exception, and it is here on purpose: Clay
+ *   sometimes agrees a deal on the phone that is not on the price list. With
+ *   the toggle on, the admin types the total (XCG, more than zero) and an
+ *   optional reason. The standard quote stays on screen beside it, and the
+ *   server stores both, so the booking page can always say "custom price,
+ *   standard would have been X". With the toggle off the form behaves exactly
+ *   as it did before the toggle existed.
+ *
+ *   This is ADMIN ONLY and enforced on the server (requireAdmin in
+ *   createBookingManually). The public wizard's endpoint has no price field at
+ *   all, so a guest cannot set, lower or even suggest a price.
+ *
+ * WHAT IS DELIBERATELY NOT NEGOTIABLE HERE
  *   THE CLASH. If the car is taken, the answer is "it is taken", not a different
  *   car. Reassigning would undo the one thing this page is for.
  *
@@ -46,6 +57,7 @@ import {
   PICKUP_LOCATIONS,
 } from "../../../content/brand";
 import type { ManualBookingVehicle } from "../../../lib/admin/types";
+import { CURRENCY_CODE } from "../../../lib/money";
 import type { PaymentStatus } from "../../../lib/supabase/types";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -106,6 +118,18 @@ function VehicleNote({ vehicle }: { vehicle: ManualBookingVehicle }) {
     );
   }
   return <span className="text-[11px] font-semibold text-[#1a7a45]">Free for these dates</span>;
+}
+
+/**
+ * "450", "450.5" or "1,250.00" → integer cents, or null for anything that is
+ * not a positive amount with at most two decimals. Strict on purpose: a price
+ * box that quietly turns "45o" into 45 is how a booking ends up ten times off.
+ */
+function parseAmountToCents(raw: string): number | null {
+  const cleaned = raw.trim().replace(/,/g, "");
+  if (!/^\d{1,7}(\.\d{1,2})?$/.test(cleaned)) return null;
+  const cents = Math.round(Number(cleaned) * 100);
+  return cents > 0 ? cents : null;
 }
 
 /** A free-text address with the usual answers as quick-fill chips, the same
@@ -176,8 +200,17 @@ function NewBookingPage() {
   const [adminNotes, setAdminNotes] = useState("");
   const [bookingStatus, setBookingStatus] = useState<"pending" | "confirmed">("confirmed");
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>("unpaid");
+  /** "Set own price". Off by default; while off, nothing about it is sent. */
+  const [ownPrice, setOwnPrice] = useState(false);
+  /** Whole or decimal XCG as typed, e.g. "450" or "450.50". */
+  const [ownPriceAmount, setOwnPriceAmount] = useState("");
+  const [ownPriceNote, setOwnPriceNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Parsed to integer cents here, once. Null while the box holds anything that
+  // is not a positive amount with at most two decimals.
+  const ownPriceCents = parseAmountToCents(ownPriceAmount);
 
   const allVehicles = options.listings.flatMap((l) =>
     l.vehicles.map((v) => ({ vehicle: v, listing: l })),
@@ -234,6 +267,11 @@ function NewBookingPage() {
       return;
     }
 
+    if (ownPrice && ownPriceCents === null) {
+      setError(`Enter the custom price in ${CURRENCY_CODE}, more than zero.`);
+      return;
+    }
+
     setBusy(true);
     setError(null);
     try {
@@ -259,6 +297,10 @@ function NewBookingPage() {
           adminNotes: adminNotes.trim() || null,
           bookingStatus,
           paymentStatus,
+          priceOverride:
+            ownPrice && ownPriceCents !== null
+              ? { totalCents: ownPriceCents, note: ownPriceNote.trim() || null }
+              : null,
         },
       });
 
@@ -596,7 +638,16 @@ function NewBookingPage() {
 
               {quote && quote.ok && (
                 <div className="rounded-lg bg-cw-teal-soft/50 px-3 py-2.5">
-                  <p className="font-display text-[24px] font-extrabold leading-none tabular-nums text-cw-navy">
+                  {ownPrice && (
+                    <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-cw-ink/50">
+                      Standard price
+                    </p>
+                  )}
+                  <p
+                    className={`font-display font-extrabold leading-none tabular-nums ${
+                      ownPrice ? "text-[18px] text-cw-ink/55 line-through" : "text-[24px] text-cw-navy"
+                    }`}
+                  >
                     {formatMoney(quote.quote.totalCents)}
                   </p>
                   <p className="mt-1 text-[11px] text-cw-ink/60">
@@ -616,11 +667,62 @@ function NewBookingPage() {
                     )}
                   </p>
                   <p className="mt-1 text-[11px] text-cw-ink/50">
-                    The price list applies at the counter too. The server recalculates this before
-                    saving; record any different arrangement as a payment.
+                    {ownPrice
+                      ? "What the price list charges for this car and these dates. Saved with the booking for reference."
+                      : "From the price list. The server recalculates this before saving."}
                   </p>
                 </div>
               )}
+
+              {/* Set own price. Off = the form behaves exactly as before. */}
+              <div className="rounded-lg border border-cw-navy/12 px-3 py-2.5">
+                <label className="flex cursor-pointer items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={ownPrice}
+                    onChange={(e) => {
+                      setOwnPrice(e.target.checked);
+                      setError(null);
+                    }}
+                    className="h-4 w-4 accent-cw-teal"
+                  />
+                  <span className="text-[13px] font-semibold text-cw-navy">Set own price</span>
+                </label>
+                {ownPrice && (
+                  <div className="mt-3 space-y-3">
+                    <label className="block">
+                      <span className={labelClass}>Total ({CURRENCY_CODE})</span>
+                      <input
+                        inputMode="decimal"
+                        value={ownPriceAmount}
+                        onChange={(e) => setOwnPriceAmount(e.target.value)}
+                        placeholder="e.g. 450"
+                        aria-invalid={ownPriceAmount !== "" && ownPriceCents === null}
+                        className={`mt-1 ${inputClass}`}
+                      />
+                      <span className="mt-1 block text-[11px] text-cw-ink/50">
+                        {ownPriceCents !== null
+                          ? `The guest will owe ${formatMoney(ownPriceCents)} in total.`
+                          : "The whole rental, not per day. More than zero."}
+                      </span>
+                    </label>
+                    <label className="block">
+                      <span className={labelClass}>Note (optional)</span>
+                      <textarea
+                        value={ownPriceNote}
+                        rows={2}
+                        maxLength={500}
+                        onChange={(e) => setOwnPriceNote(e.target.value)}
+                        placeholder="Why this price: returning guest, agreed on the phone…"
+                        className={`mt-1 resize-y ${inputClass}`}
+                      />
+                      <span className="mt-1 block text-[11px] text-cw-ink/50">
+                        Staff only. Shown on the booking page.
+                      </span>
+                    </label>
+                  </div>
+                )}
+              </div>
 
               <label className="block">
                 <span className={labelClass}>Booking status</span>
@@ -654,7 +756,13 @@ function NewBookingPage() {
               <div className="flex flex-wrap items-center gap-2 pt-1">
                 <Button
                   variant="primary"
-                  disabled={busy || !picked || !datesReady || (quote !== null && !quote.ok)}
+                  disabled={
+                    busy ||
+                    !picked ||
+                    !datesReady ||
+                    (quote !== null && !quote.ok) ||
+                    (ownPrice && ownPriceCents === null)
+                  }
                   onClick={submit}
                 >
                   {busy ? "Saving…" : "Take the booking"}

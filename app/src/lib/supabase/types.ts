@@ -215,6 +215,14 @@ export interface Database {
           /** ISO instant the guest accepted the Terms & Conditions in the
            *  wizard (0008). Null for admin-made and older bookings. */
           accepted_terms_at: string | null;
+          /** Custom total an admin set on a manual booking (0009), cents.
+           *  Null on every booking priced from the price list. */
+          price_override_cents: number | null;
+          /** Optional reason for the custom price. INTERNAL. */
+          price_override_note: string | null;
+          /** What the price list would have charged, captured when a custom
+           *  price was set. Null otherwise. */
+          standard_price_cents: number | null;
           created_at: string;
           updated_at: string;
         };
@@ -241,6 +249,9 @@ export interface Database {
           admin_notes?: string | null;
           handled_by?: string | null;
           accepted_terms_at?: string | null;
+          price_override_cents?: number | null;
+          price_override_note?: string | null;
+          standard_price_cents?: number | null;
         };
         Update: Partial<Database["public"]["Tables"]["bookings"]["Insert"]>;
         Relationships: [

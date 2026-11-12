@@ -447,10 +447,11 @@ export const fetchManualBookingOptions = createServerFn({ method: "GET" })
 /**
  * Take a booking by hand, against a NAMED physical car.
  *
- * NOTE what is absent, exactly as on the public endpoint: no price, no day
- * count, no discount. An operator at the counter is subject to the same price
- * list as the website — see createManualBooking for why that is deliberate and
- * what to do when a deal genuinely differs.
+ * By default the price is the price list's, recomputed here from the database,
+ * exactly as on the public endpoint. The one difference: an admin may send
+ * `priceOverride` to set their own total. It is honoured only because
+ * requireAdmin() has passed; the standard quote is still computed and stored
+ * beside it. There is still no day count and no rate in the input.
  *
  * `handledBy` is not accepted from the form either. It is the signed-in admin,
  * taken from the session below, so the record of who took a booking cannot be
@@ -493,6 +494,21 @@ export const createBookingManually = createServerFn({ method: "POST" })
       // 'active' and 'completed' are things that happen, not things you declare.
       bookingStatus: z.enum(["pending", "confirmed"]).default("confirmed"),
       paymentStatus: z.enum(PAYMENT_STATUS).default("unpaid"),
+      // "Set own price". Absent or null means the price list applies, exactly
+      // as before. This field exists ONLY on this admin endpoint: the public
+      // submitBooking schema has no price of any kind, so a guest's request
+      // cannot reach it.
+      priceOverride: z
+        .object({
+          totalCents: z
+            .number()
+            .int("Enter the price in whole cents.")
+            .positive("A custom price must be more than zero.")
+            // XCG 1,000,000. A typo guard, not a business rule.
+            .max(100_000_000, "That price is too large to be right."),
+          note: z.string().trim().max(500, "Keep the note under 500 characters.").nullish(),
+        })
+        .nullish(),
     }),
   )
   .handler(async ({ data }) => {
@@ -511,6 +527,9 @@ export const createBookingManually = createServerFn({ method: "POST" })
       adminNotes: data.adminNotes ?? null,
       bookingStatus: data.bookingStatus,
       paymentStatus: data.paymentStatus,
+      priceOverride: data.priceOverride
+        ? { totalCents: data.priceOverride.totalCents, note: data.priceOverride.note?.trim() || null }
+        : null,
       handledBy: admin.email,
     });
   });

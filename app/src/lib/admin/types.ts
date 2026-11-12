@@ -261,6 +261,12 @@ export interface BookingDetail {
    */
   quotedPerDayCents: number;
   totalCents: number;
+  /**
+   * Set when an admin priced this booking by hand ("Set own price").
+   * `totalCents` is then their custom total; `standardCents` is what the price
+   * list would have charged at the time. Null for every normal booking.
+   */
+  priceOverride: { standardCents: number; note: string | null } | null;
   bookingStatus: BookingStatus;
   paymentStatus: PaymentStatus;
   prepStatus: PrepStatus;
