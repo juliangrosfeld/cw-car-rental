@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import BookingWizard from "../components/booking/wizard";
 import { MIN_RENTAL_DAYS } from "../lib/booking/rental";
-import { MIN_AGE_NOTE } from "../content/rental-info";
+import { MIN_AGE_NOTE, PAPERWORK_NOTE } from "../content/rental-info";
 import { CURRENCY_CODE } from "../lib/money";
 
 interface BookingSearch {
@@ -34,7 +34,7 @@ function BookingPage() {
           Book your car
         </h1>
         <p className="mx-auto mt-3 max-w-[44ch] text-center text-[15px] leading-relaxed text-cw-ink/75">
-          Two minutes, six steps, zero paperwork at pickup.
+          {PAPERWORK_NOTE}
         </p>
         {/* The price rules a guest needs BEFORE they start picking days: what
             currency, the shortest rental we take, and the minimum age. */}

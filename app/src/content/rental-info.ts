@@ -65,3 +65,8 @@ export const INSURANCE = {
   /** Our own pointer to the authority, not part of Clay's text. */
   more: 'The full insurance and accident terms are in sections 7 and 8 of the',
 } as const
+
+/** Clay's exact wording for how much paperwork a booking is. The "6 steps" are
+ *  the booking wizard's: Rental, Dates, Car, Details, Review, Confirm. If the
+ *  wizard gains or loses a step, this line is wrong; change both together. */
+export const PAPERWORK_NOTE = 'Paperwork: 2 minutes, 6 steps.'
