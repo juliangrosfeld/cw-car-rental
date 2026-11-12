@@ -160,6 +160,7 @@ function Waypoints() {
                 src={stop.image}
                 alt={`${stop.name}, Curaçao`}
                 loading={i === 0 ? "eager" : "lazy"}
+                style={stop.focus ? { objectPosition: stop.focus } : undefined}
                 className="absolute inset-0 h-full w-full object-cover transition-transform duration-[900ms] ease-out will-change-transform group-hover:scale-[1.06]"
               />
 

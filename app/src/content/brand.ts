@@ -48,6 +48,9 @@ export interface Value {
   image: string
   /** Alt text is empty on render (decorative); this is the described place. */
   place: string
+  /** CSS object-position for `image`, when the subject is not in the middle
+   *  and a tall crop would otherwise cut it off. Defaults to centre. */
+  focus?: string
   description: string
 }
 
@@ -55,14 +58,16 @@ export interface Value {
  * Each chapter pairs a brand colour with an island photo. Reliable and
  * Experience match the About page's waypoints (peach/Westpunt,
  * mint/Willemstad); Trust deliberately takes teal here rather than the
- * waypoints' yellow for Shete Boka.
+ * waypoints' yellow for Hofi Mango.
  */
 export const VALUES: Value[] = [
   {
     name: 'Trust',
     ground: 'bg-cw-teal',
-    image: '/assets/about/sheteboka-cw-image.png',
-    place: 'the north coast at Shete Boka',
+    image: '/assets/about/hofi-mango-cw-image.png',
+    place: 'the gardens and old mill tower at Hofi Mango',
+    // The photo is a wide panorama with the yellow tower right of centre.
+    focus: '66% 50%',
     description:
       "You know exactly what you're getting: the car you booked, the price you agreed to, no surprises at the counter.",
   },
@@ -137,7 +142,7 @@ export const FLEET: Vehicle[] = [
     id: 'nissan-versa-silver',
     name: 'Nissan Versa',
     colorNote: 'Silver',
-    tagline: 'Same easy Versa in cool silver, great for families heading to Shete Boka.',
+    tagline: 'Same easy Versa in cool silver, great for families heading to Hofi Mango.',
     seats: 5,
     transmission: 'Automatic',
     pricePerDay: 70,
@@ -219,7 +224,7 @@ export const TESTIMONIALS: Testimonial[] = [
     from: 'London, UK',
     rating: 5,
     quote:
-      'Travelling with two kids means the small things matter, and CW made all of them easy. They met us at the hotel, walked us through the car properly, and answered a WhatsApp about the road to Shete Boka within a minute.',
+      'Travelling with two kids means the small things matter, and CW made all of them easy. They met us at the hotel, walked us through the car properly, and answered every WhatsApp question within a minute.',
   },
 ]
 
@@ -281,24 +286,29 @@ export function isUnfinishedLocation(value: string): boolean {
   return /^hotel\s*:?\s*$/i.test(value.trim())
 }
 
-/** Island waypoints for the About page. Real places, local tone. */
+/** Island waypoints for the About page, in display order: Westpunt, Hofi
+ *  Mango, Willemstad. Real places, local tone. */
 export const WAYPOINTS = [
   {
     name: 'Westpunt',
     accent: 'peach',
     image: '/assets/about/westpunt-cw-image.png',
+    focus: undefined as string | undefined,
     note: 'Cliff jumps at Playa Forti, grouper lunches at the beach shacks. Take the coast road slow.',
   },
   {
-    name: 'Shete Boka',
+    name: 'Hofi Mango',
     accent: 'yellow',
-    image: '/assets/about/sheteboka-cw-image.png',
-    note: 'Seven inlets where the north coast hits back. Boka Tabla thunders after a windy night.',
+    image: '/assets/about/hofi-mango-cw-image.png',
+    // Wide panorama, yellow tower right of centre: keep it in the tall crop.
+    focus: '68% 50%',
+    note: 'An old plantation garden out west. Shady trails under giant mango trees, and the yellow mill tower you cannot miss.',
   },
   {
     name: 'Willemstad',
     accent: 'mint',
     image: '/assets/about/willemstad-cw-images.png',
+    focus: undefined as string | undefined,
     note: 'Punda for the postcard, Otrobanda for the real thing. Park the car, cross the swinging bridge.',
   },
 ] as const

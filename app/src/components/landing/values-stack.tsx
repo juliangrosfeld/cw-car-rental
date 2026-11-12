@@ -42,6 +42,7 @@ export default function ValuesStack() {
             aria-hidden="true"
             decoding="async"
             loading="lazy"
+            style={value.focus ? { objectPosition: value.focus } : undefined}
             className="absolute inset-0 h-full w-full object-cover"
           />
           {/* The colour wash. */}
