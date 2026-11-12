@@ -9,15 +9,21 @@
  * against Supabase Auth, and throws a redirect if the caller is not an admin.
  *
  * If you add a function to this file, the first line of its handler is
- * `await requireAdmin()`. There is no exception; `adminSignIn` is not one
- * either, it is simply the endpoint that establishes the session in the first
- * place and it validates a password instead.
+ * `await requireAdmin()`. The only handlers without it are the ones that exist
+ * for someone who is NOT signed in yet: `adminSignIn` (validates a password),
+ * `adminRequestPasswordReset` (reveals nothing) and `adminCompletePasswordReset`
+ * (authorised by the emailed recovery tokens). None of them reads CRM data.
  */
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+import { getRequestUrl } from "@tanstack/react-start/server";
+
+import { ADMIN_PASSWORD_MIN_LENGTH } from "../auth/password-policy";
 import {
+  completeAdminPasswordReset,
   readAdminSession,
+  requestAdminPasswordReset,
   requireAdmin,
   signInAdmin,
   signOutAdmin,
@@ -71,6 +77,47 @@ const credentialsSchema = z.object({
 export const adminSignIn = createServerFn({ method: "POST" })
   .inputValidator(credentialsSchema)
   .handler(async ({ data }) => signInAdmin(data));
+
+/**
+ * "Forgot password?": email a recovery link.
+ *
+ * Deliberately unauthenticated (that is the point of it) and deliberately
+ * uninformative: the answer is `{ ok: true }` whether or not the address is an
+ * admin's, so it cannot be used to find out which emails have accounts.
+ */
+export const adminRequestPasswordReset = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      email: z
+        .string()
+        .trim()
+        .min(1, "Enter your email address.")
+        .email("That is not an email address."),
+    }),
+  )
+  .handler(async ({ data }) => {
+    await requestAdminPasswordReset({ email: data.email, origin: getRequestUrl().origin });
+    return { ok: true as const };
+  });
+
+/**
+ * Set the new password from the emailed recovery link. The two tokens ARE the
+ * authorisation: they only exist in a link Supabase mailed to the account's
+ * own inbox. See completeAdminPasswordReset.
+ */
+export const adminCompletePasswordReset = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      accessToken: z.string().min(20).max(4096),
+      refreshToken: z.string().min(6).max(1024),
+      // Never trimmed: a space is a legitimate password character.
+      password: z
+        .string()
+        .min(ADMIN_PASSWORD_MIN_LENGTH, `Use at least ${ADMIN_PASSWORD_MIN_LENGTH} characters.`)
+        .max(200),
+    }),
+  )
+  .handler(async ({ data }) => completeAdminPasswordReset(data));
 
 /** Sign out. Always succeeds from the caller's point of view — the cookies are
  *  cleared before the token revocation is even attempted. */

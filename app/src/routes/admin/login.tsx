@@ -10,7 +10,7 @@
  * and puts the resulting tokens in httpOnly cookies. See
  * src/lib/auth/admin.server.ts for why.
  */
-import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect, useRouter } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
 
 import { adminSignIn, fetchAdminSession } from "../../lib/api/admin.functions";
@@ -62,6 +62,7 @@ const ADMIN_ROUTES = [
   "/admin/bookings",
   "/admin/fleet",
   "/admin/clients",
+  "/admin/licenses",
   "/admin/payments",
 ] as const;
 
@@ -155,9 +156,17 @@ function LoginPage() {
             className="mt-1.5 w-full rounded-lg border border-cw-navy/15 bg-white px-3 py-2.5 text-[14px] text-cw-ink outline-none transition-colors focus:border-cw-teal focus:ring-2 focus:ring-cw-teal/20"
           />
 
-          <label className="mt-4 block text-[12px] font-semibold text-cw-ink/70" htmlFor="password">
-            Password
-          </label>
+          <div className="mt-4 flex items-baseline justify-between gap-3">
+            <label className="block text-[12px] font-semibold text-cw-ink/70" htmlFor="password">
+              Password
+            </label>
+            <Link
+              to="/admin/forgot-password"
+              className="text-[12px] font-semibold text-cw-teal underline underline-offset-2 hover:text-cw-teal-dark"
+            >
+              Forgot password?
+            </Link>
+          </div>
           <input
             id="password"
             name="password"
@@ -189,7 +198,7 @@ function LoginPage() {
 
         <p className="mt-4 text-center text-[12px] text-white/45">
           <a href="/" className="underline underline-offset-2 hover:text-white/70">
-            Back to cwcarrental.com
+            Back to the website
           </a>
         </p>
       </div>

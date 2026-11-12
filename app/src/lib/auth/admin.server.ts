@@ -35,6 +35,7 @@ import type { Session, User } from "@supabase/supabase-js";
 
 import { supabaseAuthClient } from "../supabase/auth.server";
 import type { AdminIdentity } from "../admin/types";
+import { ADMIN_PASSWORD_MIN_LENGTH } from "./password-policy";
 
 export type { AdminIdentity };
 
@@ -244,4 +245,115 @@ export async function signOutAdmin(): Promise<void> {
   } catch (error) {
     console.error("Admin sign-out: token revocation failed", error);
   }
+}
+
+/* ── password reset ────────────────────────────────────────────────────────── */
+
+/** Where the emailed recovery link lands. Must be listed under Redirect URLs in
+ *  Supabase Auth settings for every origin the site is served from. */
+export const ADMIN_RESET_PATH = "/admin/reset-password";
+
+
+/**
+ * Ask Supabase to email a password recovery link.
+ *
+ * RETURNS NOTHING, ON PURPOSE. Whether the address belongs to an account, the
+ * mail provider is rate limiting, or GoTrue is down, the caller gets the same
+ * silence and the form shows the same sentence. Any difference in the answer
+ * (or a thrown error) would tell a stranger which emails are admins. Failures
+ * are logged server-side instead, without the address.
+ *
+ * `origin` is the origin of the request that asked, so the link returns to the
+ * site the admin is actually using: production, a preview, or localhost. If
+ * that origin is not in Supabase's Redirect URLs allowlist, Supabase falls back
+ * to its Site URL, which is why the allowlist matters (see .env.example).
+ */
+export async function requestAdminPasswordReset(input: {
+  email: string;
+  origin: string;
+}): Promise<void> {
+  try {
+    const { error } = await supabaseAuthClient().auth.resetPasswordForEmail(
+      input.email.trim().toLowerCase(),
+      { redirectTo: `${input.origin}${ADMIN_RESET_PATH}` },
+    );
+    if (error) {
+      console.error(
+        `[auth] password reset request failed: status=${error.status ?? "?"} ${error.message}`,
+      );
+    }
+  } catch (error) {
+    console.error("[auth] password reset request threw", error);
+  }
+}
+
+export type PasswordResetResult =
+  | { ok: true }
+  | { ok: false; reason: "link_invalid" | "weak_password" | "unavailable"; message: string };
+
+/**
+ * Set a new password, authorised by the tokens from the emailed recovery link.
+ *
+ * The recovery link signs the browser in with a short-lived session and hands
+ * it over in the URL fragment. The reset page passes those two tokens here with
+ * the new password; this function proves them against GoTrue, changes the
+ * password, and then signs that recovery session OUT again. Nobody is logged in
+ * as a side effect: the admin goes back to /admin/login and signs in with the
+ * new password, through the same path as always, which is also the path that
+ * checks they are an admin.
+ */
+export async function completeAdminPasswordReset(input: {
+  accessToken: string;
+  refreshToken: string;
+  password: string;
+}): Promise<PasswordResetResult> {
+  const LINK_INVALID = {
+    ok: false as const,
+    reason: "link_invalid" as const,
+    message: "This reset link has expired or was already used. Request a new one.",
+  };
+
+  if (input.password.length < ADMIN_PASSWORD_MIN_LENGTH) {
+    return {
+      ok: false,
+      reason: "weak_password",
+      message: `Use at least ${ADMIN_PASSWORD_MIN_LENGTH} characters.`,
+    };
+  }
+
+  const auth = supabaseAuthClient();
+  const session = await auth.auth.setSession({
+    access_token: input.accessToken,
+    refresh_token: input.refreshToken,
+  });
+  if (session.error || !session.data.session) return LINK_INVALID;
+
+  const { error } = await auth.auth.updateUser({ password: input.password });
+  if (error) {
+    const status = error.status ?? 400;
+    if (status >= 500) {
+      return {
+        ok: false,
+        reason: "unavailable",
+        message: "Could not reach the login service. Try again in a moment.",
+      };
+    }
+    // GoTrue's own password rules (length, leaked-password check, "must differ
+    // from the old one") come back as 4xx with a readable message.
+    if (status === 422 || /password/i.test(error.message)) {
+      return { ok: false, reason: "weak_password", message: error.message };
+    }
+    return LINK_INVALID;
+  }
+
+  // Best effort: end the recovery session everywhere. The password is already
+  // changed, so a failure here must not turn success into an error.
+  try {
+    await auth.auth.signOut({ scope: "global" });
+  } catch (cause) {
+    console.error("[auth] could not revoke the recovery session", cause);
+  }
+  // Any cookie session this browser held was for the old password.
+  clearSessionCookies();
+  return { ok: true };
 }

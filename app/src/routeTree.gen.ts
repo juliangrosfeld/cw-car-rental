@@ -16,7 +16,9 @@ import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as AdminShellRouteImport } from './routes/admin/_shell'
+import { Route as AdminForgotPasswordRouteImport } from './routes/admin/forgot-password'
 import { Route as AdminLoginRouteImport } from './routes/admin/login'
+import { Route as AdminResetPasswordRouteImport } from './routes/admin/reset-password'
 import { Route as AdminShellIndexRouteImport } from './routes/admin/_shell/index'
 import { Route as AdminShellBookingsIndexRouteImport } from './routes/admin/_shell/bookings.index'
 import { Route as AdminShellBookingsBookingIdRouteImport } from './routes/admin/_shell/bookings.$bookingId'
@@ -63,9 +65,19 @@ const AdminShellRoute = AdminShellRouteImport.update({
   path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminForgotPasswordRoute = AdminForgotPasswordRouteImport.update({
+  id: '/admin/forgot-password',
+  path: '/admin/forgot-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminLoginRoute = AdminLoginRouteImport.update({
   id: '/admin/login',
   path: '/admin/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminResetPasswordRoute = AdminResetPasswordRouteImport.update({
+  id: '/admin/reset-password',
+  path: '/admin/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminShellIndexRoute = AdminShellIndexRouteImport.update({
@@ -129,7 +141,9 @@ export interface FileRoutesByFullPath {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/terms': typeof TermsRoute
   '/admin': typeof AdminShellRouteWithChildren
+  '/admin/forgot-password': typeof AdminForgotPasswordRoute
   '/admin/login': typeof AdminLoginRoute
+  '/admin/reset-password': typeof AdminResetPasswordRoute
   '/admin/': typeof AdminShellIndexRoute
   '/admin/bookings/$bookingId': typeof AdminShellBookingsBookingIdRoute
   '/admin/bookings/new': typeof AdminShellBookingsNewRoute
@@ -148,7 +162,9 @@ export interface FileRoutesByTo {
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/terms': typeof TermsRoute
+  '/admin/forgot-password': typeof AdminForgotPasswordRoute
   '/admin/login': typeof AdminLoginRoute
+  '/admin/reset-password': typeof AdminResetPasswordRoute
   '/admin': typeof AdminShellIndexRoute
   '/admin/bookings/$bookingId': typeof AdminShellBookingsBookingIdRoute
   '/admin/bookings/new': typeof AdminShellBookingsNewRoute
@@ -169,7 +185,9 @@ export interface FileRoutesById {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/terms': typeof TermsRoute
   '/admin/_shell': typeof AdminShellRouteWithChildren
+  '/admin/forgot-password': typeof AdminForgotPasswordRoute
   '/admin/login': typeof AdminLoginRoute
+  '/admin/reset-password': typeof AdminResetPasswordRoute
   '/admin/_shell/': typeof AdminShellIndexRoute
   '/admin/_shell/bookings/$bookingId': typeof AdminShellBookingsBookingIdRoute
   '/admin/_shell/bookings/new': typeof AdminShellBookingsNewRoute
@@ -191,7 +209,9 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/terms'
     | '/admin'
+    | '/admin/forgot-password'
     | '/admin/login'
+    | '/admin/reset-password'
     | '/admin/'
     | '/admin/bookings/$bookingId'
     | '/admin/bookings/new'
@@ -210,7 +230,9 @@ export interface FileRouteTypes {
     | '/robots.txt'
     | '/sitemap.xml'
     | '/terms'
+    | '/admin/forgot-password'
     | '/admin/login'
+    | '/admin/reset-password'
     | '/admin'
     | '/admin/bookings/$bookingId'
     | '/admin/bookings/new'
@@ -230,7 +252,9 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/terms'
     | '/admin/_shell'
+    | '/admin/forgot-password'
     | '/admin/login'
+    | '/admin/reset-password'
     | '/admin/_shell/'
     | '/admin/_shell/bookings/$bookingId'
     | '/admin/_shell/bookings/new'
@@ -251,7 +275,9 @@ export interface RootRouteChildren {
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   TermsRoute: typeof TermsRoute
   AdminShellRoute: typeof AdminShellRouteWithChildren
+  AdminForgotPasswordRoute: typeof AdminForgotPasswordRoute
   AdminLoginRoute: typeof AdminLoginRoute
+  AdminResetPasswordRoute: typeof AdminResetPasswordRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -305,11 +331,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminShellRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/forgot-password': {
+      id: '/admin/forgot-password'
+      path: '/admin/forgot-password'
+      fullPath: '/admin/forgot-password'
+      preLoaderRoute: typeof AdminForgotPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/login': {
       id: '/admin/login'
       path: '/admin/login'
       fullPath: '/admin/login'
       preLoaderRoute: typeof AdminLoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/reset-password': {
+      id: '/admin/reset-password'
+      path: '/admin/reset-password'
+      fullPath: '/admin/reset-password'
+      preLoaderRoute: typeof AdminResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/_shell/': {
@@ -423,7 +463,9 @@ const rootRouteChildren: RootRouteChildren = {
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   TermsRoute: TermsRoute,
   AdminShellRoute: AdminShellRouteWithChildren,
+  AdminForgotPasswordRoute: AdminForgotPasswordRoute,
   AdminLoginRoute: AdminLoginRoute,
+  AdminResetPasswordRoute: AdminResetPasswordRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
