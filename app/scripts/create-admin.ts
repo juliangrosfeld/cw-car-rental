@@ -1,10 +1,10 @@
 /**
  * Create or promote a CW admin. Run it with bun, from `app/`:
  *
- *   bun run scripts/create-admin.ts clay@cwcarrental.com 'a-long-passphrase'
- *   bun run scripts/create-admin.ts clay@cwcarrental.com          # promote only
+ *   bun run scripts/create-admin.ts info@cw-carrental.com 'a-long-passphrase'
+ *   bun run scripts/create-admin.ts info@cw-carrental.com          # promote only
  *   bun run scripts/create-admin.ts --list
- *   bun run scripts/create-admin.ts --revoke clay@cwcarrental.com
+ *   bun run scripts/create-admin.ts --revoke info@cw-carrental.com
  *
  * WHY A SCRIPT AND NOT A SIGNUP PAGE
  * Admin is `app_metadata.role = 'admin'`, and app_metadata is writable only with

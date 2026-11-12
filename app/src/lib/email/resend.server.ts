@@ -15,6 +15,8 @@
  */
 import process from "node:process";
 
+import { BUSINESS_NAME, CONTACT } from "../../content/brand";
+
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 
 /** Long enough for a healthy Resend (well under a second), short enough that a
@@ -26,6 +28,8 @@ export interface OutgoingEmail {
   subject: string;
   html: string;
   text: string;
+  /** Where replies go. Omit it to use the configured CW reply-to address
+   *  (EMAIL_REPLY_TO); pass an address to override, or null for none. */
   replyTo?: string | null;
   /** Resend drops a repeat send with the same key for 24h, so a retried
    *  request cannot email a guest twice about one booking. */
@@ -38,12 +42,35 @@ export type SendResult =
   | { ok: false; reason: "provider_error"; status: number; message: string }
   | { ok: false; reason: "network_error"; message: string };
 
-/** The configured sender, or null when email is not set up yet. */
-export function emailConfig(): { apiKey: string; from: string } | null {
+/**
+ * WHO MAIL IS FROM, WHERE REPLIES GO, AND WHO GETS ALERTS.
+ *
+ * Three env vars, each optional, each defaulting to CW's own address from
+ * CONTACT (src/content/brand.ts), so no address is typed in the email code:
+ *
+ *   EMAIL_FROM          the sender, e.g. "CW Car Sales & Rental <info@…>".
+ *                       Must be on a domain verified in Resend.
+ *   EMAIL_REPLY_TO      where a guest's reply lands.
+ *   ADMIN_NOTIFY_EMAIL  where new-booking alerts go.
+ *
+ * None of these switches email on. That is RESEND_API_KEY alone (see
+ * emailConfig): without the key nothing is sent, whatever these say.
+ */
+export function emailAddresses(): { from: string; replyTo: string; adminNotify: string } {
+  return {
+    from: process.env.EMAIL_FROM?.trim() || `${BUSINESS_NAME} <${CONTACT.email}>`,
+    replyTo: process.env.EMAIL_REPLY_TO?.trim() || CONTACT.email,
+    adminNotify: process.env.ADMIN_NOTIFY_EMAIL?.trim() || CONTACT.email,
+  };
+}
+
+/** The configured sender, or null when email is not switched on yet. The API
+ *  key is the switch: until it is set, every send is a clean no-op. */
+export function emailConfig(): { apiKey: string; from: string; replyTo: string } | null {
   const apiKey = process.env.RESEND_API_KEY?.trim();
-  const from = process.env.EMAIL_FROM?.trim();
-  if (!apiKey || !from) return null;
-  return { apiKey, from };
+  if (!apiKey) return null;
+  const { from, replyTo } = emailAddresses();
+  return { apiKey, from, replyTo };
 }
 
 export async function sendEmail(email: OutgoingEmail): Promise<SendResult> {
@@ -52,9 +79,12 @@ export async function sendEmail(email: OutgoingEmail): Promise<SendResult> {
     return {
       ok: false,
       reason: "not_configured",
-      message: "RESEND_API_KEY and EMAIL_FROM must both be set (see .env.example).",
+      message: "RESEND_API_KEY is not set (see .env.example).",
     };
   }
+
+  // undefined = "use CW's reply-to"; null = "no reply-to header at all".
+  const replyTo = email.replyTo === undefined ? config.replyTo : email.replyTo;
 
   let response: Response;
   try {
@@ -71,7 +101,7 @@ export async function sendEmail(email: OutgoingEmail): Promise<SendResult> {
         subject: email.subject,
         html: email.html,
         text: email.text,
-        ...(email.replyTo ? { reply_to: email.replyTo } : {}),
+        ...(replyTo ? { reply_to: replyTo } : {}),
       }),
       signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
     });

@@ -15,11 +15,9 @@
  * warning, a failed send is an error, and both carry the booking id so the
  * guest can be contacted by hand.
  */
-import process from "node:process";
-
 import type { BookingConfirmation } from "../booking/availability.server";
 import { renderAdminAlert, renderGuestConfirmation, type RenderedEmail } from "./booking-emails";
-import { sendEmail, type SendResult } from "./resend.server";
+import { emailAddresses, sendEmail, type SendResult } from "./resend.server";
 
 export interface BookingNotificationOutcome {
   guest: SendResult;
@@ -31,31 +29,23 @@ export async function notifyNewBooking(
   context: { origin: string | null; specialRequests: string | null },
 ): Promise<BookingNotificationOutcome> {
   const id = confirmation.bookingId;
-  const adminTo = process.env.ADMIN_NOTIFY_EMAIL?.trim() || null;
+  const { adminNotify: adminTo, replyTo: cwReplyTo } = emailAddresses();
 
   const attempt = async (
     kind: "guest-confirmation" | "admin-alert",
-    to: string | null,
+    to: string,
     render: () => RenderedEmail,
-    replyTo: string | null,
+    replyTo: string,
   ): Promise<SendResult> => {
     let result: SendResult;
     try {
-      if (!to) {
-        result = {
-          ok: false,
-          reason: "not_configured",
-          message: "ADMIN_NOTIFY_EMAIL is not set (see .env.example).",
-        };
-      } else {
-        const email = render();
-        result = await sendEmail({
-          to,
-          ...email,
-          replyTo,
-          idempotencyKey: `booking/${id}/${kind}`,
-        });
-      }
+      const email = render();
+      result = await sendEmail({
+        to,
+        ...email,
+        replyTo,
+        idempotencyKey: `booking/${id}/${kind}`,
+      });
     } catch (error) {
       // A rendering bug, most likely. Still not the booking's problem.
       result = {
@@ -82,12 +72,13 @@ export async function notifyNewBooking(
   const adminUrl = context.origin ? `${context.origin}/admin/bookings/${id}` : null;
 
   const [guest, admin] = await Promise.all([
-    // Replies from the guest go to Clay, not to a no-reply sender.
+    // Replies from the guest go to CW's own address (EMAIL_REPLY_TO), not to
+    // a no-reply sender.
     attempt(
       "guest-confirmation",
       confirmation.client.email,
       () => renderGuestConfirmation(confirmation),
-      adminTo,
+      cwReplyTo,
     ),
     // Replies from Clay go straight to the guest.
     attempt(

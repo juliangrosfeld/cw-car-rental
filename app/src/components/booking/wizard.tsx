@@ -3,6 +3,7 @@ import { AnimatePresence, MotionConfig, motion } from 'framer-motion'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   CONTACT,
+  EMAIL_HREF,
   LOCATION_HELPER,
   LOCATION_MAX_LENGTH,
   PICKUP_LOCATIONS,
@@ -1077,7 +1078,7 @@ function CustomQuoteNotice({ days }: { days: number }) {
           Ask us on WhatsApp
         </a>
         <a
-          href={`mailto:${CONTACT.email}`}
+          href={EMAIL_HREF}
           className="rounded-xl border-2 border-cw-navy/15 bg-white px-6 py-3 font-display text-[15px] font-bold text-cw-navy transition-colors hover:border-cw-teal hover:text-cw-teal"
         >
           Email us
@@ -1832,6 +1833,15 @@ function Confirmation({ confirmation: c }: { confirmation: Confirmed }) {
       >
         Message us on WhatsApp
       </a>
+      <p className="mt-4 text-sm text-cw-ink/70">
+        Or email{' '}
+        <a
+          href={EMAIL_HREF}
+          className="font-semibold text-cw-teal underline decoration-cw-teal/40 underline-offset-4 hover:text-cw-teal-dark"
+        >
+          {CONTACT.email}
+        </a>
+      </p>
     </div>
   )
 }

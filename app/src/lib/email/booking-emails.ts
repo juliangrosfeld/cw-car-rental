@@ -17,7 +17,7 @@
  * Everything interpolated into HTML goes through esc(): names, flight numbers
  * and special requests are typed by whoever is on the internet.
  */
-import { WHATSAPP_URL } from "../../content/brand";
+import { CONTACT, EMAIL_HREF, WHATSAPP_URL } from "../../content/brand";
 import type { BookingConfirmation } from "../booking/availability.server";
 import {
   CONFIRMATION_NOTES,
@@ -97,7 +97,7 @@ function layout(title: string, body: string): string {
 ${body}
 </td></tr>
 </table>
-<p style="margin:16px 0 0;font-size:12px;color:#7a8f99;">CW Car Rental · Curaçao</p>
+<p style="margin:16px 0 0;font-size:12px;color:#7a8f99;">CW Car Rental · Curaçao · <a href="${esc(EMAIL_HREF)}" style="color:#7a8f99;">${esc(CONTACT.email)}</a></p>
 </td></tr>
 </table>
 </body>
@@ -150,6 +150,7 @@ ${CONFIRMATION_NOTES.map(
     "",
     copy.contact,
     `WhatsApp: ${whatsapp}`,
+    `Email: ${CONTACT.email}`,
   ].join("\n");
 
   return { subject: oneLine(copy.subject), html, text };
@@ -253,6 +254,8 @@ ${
     adminUrl
       ? `Open: ${adminUrl}`
       : `Find it in the back office under Bookings, reference ${reference}.`,
+    "",
+    `CW Car Rental · Curaçao · ${CONTACT.email}`,
   ].join("\n");
 
   return { subject, html, text };

@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { CONTACT, PHONE_HREF, POSITIONING } from '../../content/brand'
+import { CONTACT, EMAIL_HREF, PHONE_HREF, POSITIONING } from '../../content/brand'
 import { TERMS_LINK_LABEL } from '../../content/legal/terms'
 
 /**
@@ -33,7 +33,7 @@ export default function Footer() {
             </p>
             <ul className="mt-4 space-y-2.5 text-[15px]">
               <li>
-                <a className="text-white/85 transition-colors hover:text-cw-peach" href={`mailto:${CONTACT.email}`}>
+                <a className="text-white/85 transition-colors hover:text-cw-peach" href={EMAIL_HREF}>
                   {CONTACT.email}
                 </a>
               </li>

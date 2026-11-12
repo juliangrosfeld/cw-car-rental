@@ -24,15 +24,28 @@ export const FOUNDER_QUOTE =
  * number: `phone` is the display form, `whatsapp` is the same number in E.164.
  * Every tel: link, wa.me link, email and screen reads it from here (via
  * PHONE_HREF and WHATSAPP_URL below), so changing the number is a one-line edit.
- * There is no Facebook page, so none is listed. `email` is still unconfirmed:
- * cwcarrental.com was not registered as of Oct 2026, so it cannot receive mail.
+ * There is no Facebook page, so none is listed.
+ *
+ * `email` is CW's own address, and likewise the single source: the footer, the
+ * confirmation screen and every email footer read it from here, and it is the
+ * default sender, reply-to and alert address for outgoing mail when the
+ * EMAIL_FROM / EMAIL_REPLY_TO / ADMIN_NOTIFY_EMAIL env vars are not set (see
+ * src/lib/email/resend.server.ts). Mind the hyphen: the domain is
+ * cw-carrental.com.
  */
 export const CONTACT = {
-  email: 'hello@cwcarrental.com',
+  email: 'info@cw-carrental.com',
   phone: '+599 9 521 8775',
   whatsapp: '+59995218775',
   instagram: 'https://www.instagram.com/cw_car_rentals/',
 }
+
+/** `mailto:` target for CONTACT.email. */
+export const EMAIL_HREF = `mailto:${CONTACT.email}`
+
+/** The name mail is sent under, and the business name wherever Clay's own text
+ *  uses it (the after-care email, the legal documents). */
+export const BUSINESS_NAME = 'CW Car Sales & Rental'
 
 /** `tel:` target for CONTACT.phone. */
 export const PHONE_HREF = `tel:${CONTACT.whatsapp}`
