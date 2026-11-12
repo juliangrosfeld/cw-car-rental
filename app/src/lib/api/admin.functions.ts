@@ -41,6 +41,7 @@ import {
 } from "../admin/bookings.server";
 import { getClientDetail, getClientsList } from "../admin/clients.server";
 import { getLicensePhotoLink, getLicensesList } from "../admin/licenses.server";
+import { notifyBookingReturned } from "../email/notify-aftercare.server";
 import { getFleetCar, getFleetOverview, updateCar, updateVehicle } from "../admin/fleet.server";
 import {
   getBookingLedger,
@@ -228,7 +229,18 @@ export const updateBookingPrepStatus = createServerFn({ method: "POST" })
   .inputValidator(prepWriteSchema)
   .handler(async ({ data }) => {
     await requireAdmin();
-    return setBookingPrepStatus(data);
+    const result = await setBookingPrepStatus(data);
+
+    // A booking that has just BECOME returned gets its thank-you email. Only on
+    // a real transition (ok, and it was not already returned), and only after
+    // the write above has succeeded. notifyBookingReturned never throws, is
+    // bounded by a 6 second timeout, and refuses to send twice, so nothing it
+    // does can undo or hold up the return. It is awaited rather than fired and
+    // forgotten because Vercel may freeze the function the moment it responds.
+    if (result.ok && data.to === "returned" && data.expectedFrom !== "returned") {
+      await notifyBookingReturned(data.bookingId);
+    }
+    return result;
   });
 
 /** Save the internal notes. `updated_at` is stamped by the database trigger. */

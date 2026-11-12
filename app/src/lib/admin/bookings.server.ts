@@ -450,6 +450,7 @@ interface RawDetailRow {
   price_override_cents: number | null;
   price_override_note: string | null;
   standard_price_cents: number | null;
+  aftercare_sent_at: string | null;
   booking_status: BookingStatus;
   payment_status: PaymentStatus;
   prep_status: PrepStatus;
@@ -563,6 +564,7 @@ function toBookingDetail(raw: RawDetailRow): BookingDetail {
     specialRequests: raw.special_requests,
     adminNotes: raw.admin_notes,
     handledBy: raw.handled_by,
+    aftercareSentAt: raw.aftercare_sent_at,
     createdAt: raw.created_at,
     updatedAt: raw.updated_at,
   };

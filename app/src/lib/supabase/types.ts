@@ -226,6 +226,9 @@ export interface Database {
           /** What the price list would have charged, captured when a custom
            *  price was set. Null otherwise. */
           standard_price_cents: number | null;
+          /** ISO instant the after-care (thank you / review) email was
+           *  successfully sent (0010). Null = not sent. Set once. */
+          aftercare_sent_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -255,6 +258,7 @@ export interface Database {
           price_override_cents?: number | null;
           price_override_note?: string | null;
           standard_price_cents?: number | null;
+          aftercare_sent_at?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["bookings"]["Insert"]>;
         Relationships: [

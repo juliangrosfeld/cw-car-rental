@@ -269,6 +269,8 @@ export interface BookingDetail {
    * list would have charged at the time. Null for every normal booking.
    */
   priceOverride: { standardCents: number; note: string | null } | null;
+  /** ISO instant the after-care thank-you email went out, or null. */
+  aftercareSentAt: string | null;
   bookingStatus: BookingStatus;
   paymentStatus: PaymentStatus;
   prepStatus: PrepStatus;

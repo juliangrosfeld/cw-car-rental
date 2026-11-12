@@ -445,6 +445,15 @@ function BookingDetailPage() {
             <Field label="Reference" value={booking.ref} mono />
             <Field label="Booked" value={formatInstant(booking.createdAt)} />
             <Field label="Last change" value={formatInstant(booking.updatedAt)} />
+            <Field
+              label="Thank-you email"
+              value={booking.aftercareSentAt ? formatInstant(booking.aftercareSentAt) : null}
+              hint={
+                booking.aftercareSentAt
+                  ? "Sent once. Marking it Returned again will not resend."
+                  : "Goes to the guest when the booking is marked Returned."
+              }
+            />
             <Field label="Handled by" value={booking.handledBy} />
           </div>
         </Panel>
