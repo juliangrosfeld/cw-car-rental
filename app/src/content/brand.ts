@@ -79,13 +79,10 @@ export const VALUES: Value[] = [
   {
     name: 'Trust',
     ground: 'bg-cw-teal',
-    image: '/assets/about/hofi-mango-cw-image.png',
-    place: 'the gardens and old mill tower at Hofi Mango',
-    // A wide panorama with the yellow tower right of centre. On a phone the
-    // crop is a narrow slice, so it is aimed at the tower; from md up the
-    // frame is wide enough to slide the tower to the right of the headline
-    // instead of directly behind it.
-    focusClass: 'object-[66%_50%] md:object-[38%_50%]',
+    // Clay kept the Shete Boka photo for this chapter (Nov 2026). Hofi Mango
+    // replaced it everywhere else; this is the one place it stays.
+    image: '/assets/about/sheteboka-cw-image.png',
+    place: 'the north coast at Shete Boka',
     description:
       "You know exactly what you're getting: the car you booked, the price you agreed to, no surprises at the counter.",
   },
