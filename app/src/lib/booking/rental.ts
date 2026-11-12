@@ -116,11 +116,14 @@ export function addDaysToKey(dateKey: string, days: number): string {
 /**
  * How a rental is priced. Two products, not two views of one:
  *
- *   daily    a date range. Billed per day at the car's daily_rate, with the
- *            length discounts below applied automatically.
- *   monthly  a flat monthly_rate for a ~30-day period. No day count, no tier —
- *            the monthly rate IS the long-stay price, and stacking a length
- *            discount on top of it would discount it twice.
+ *   daily    a date range. Billed per day at the car's daily_rate: the total
+ *            is days x daily rate, with nothing taken off for length.
+ *   monthly  a flat monthly_rate for a ~30-day period. No day count: the
+ *            monthly rate IS the long-stay price.
+ *
+ * There are NO length discounts (removed Nov 2026, at Clay's request). A longer
+ * daily rental costs exactly more days; the only long-stay price is the monthly
+ * product. Do not reintroduce a tier here without him asking for it.
  */
 export const RENTAL_TYPES = ["daily", "monthly"] as const;
 export type RentalType = (typeof RENTAL_TYPES)[number];
@@ -147,48 +150,6 @@ export const MAX_SELF_SERVICE_DAYS = 27;
 /** What "a month" means when a monthly rental is booked. Roughly a month, said
  *  plainly, rather than a calendar month that would make February cheaper. */
 export const MONTHLY_PERIOD_DAYS = 30;
-
-export interface DiscountTier {
-  /** Inclusive lower bound in billable days. */
-  minDays: number;
-  pct: number;
-  /** How the tier is described to a guest on a price breakdown. */
-  label: string;
-  /** The same tier inside a sentence: "5% off a week". Spelled out, because the
-   *  public site's copy is written, not tabulated. */
-  shortLabel: string;
-}
-
-/**
- * Automatic length discounts off the daily-rate total. Ordered longest first so
- * the first match is the best one the guest qualifies for.
- *
- * These are applied SERVER-SIDE from the day count the server derived, exactly
- * like the rate itself. Nothing the browser sends influences the tier.
- */
-export const DISCOUNT_TIERS: readonly DiscountTier[] = [
-  { minDays: 21, pct: 15, label: "Three weeks or more", shortLabel: "three weeks" },
-  { minDays: 14, pct: 10, label: "Two weeks or more", shortLabel: "two weeks" },
-  { minDays: 7, pct: 5, label: "A week or more", shortLabel: "a week" },
-];
-
-/** The tier a length earns, or 0. */
-export function discountPctForDays(days: number): number {
-  return DISCOUNT_TIERS.find((tier) => days >= tier.minDays)?.pct ?? 0;
-}
-
-/** The tier a length earns, in full, or null. */
-export function discountTierForDays(days: number): DiscountTier | null {
-  return DISCOUNT_TIERS.find((tier) => days >= tier.minDays) ?? null;
-}
-
-/** "5% off a week, 10% off two weeks, 15% off three weeks" — the one-liner the
- *  fleet and booking pages both show, built from the tiers rather than typed
- *  out twice and left to drift out of step with what the server charges. */
-export const DISCOUNT_TIER_SUMMARY = [...DISCOUNT_TIERS]
-  .reverse()
-  .map((tier) => `${tier.pct}% off ${tier.shortLabel}`)
-  .join(", ");
 
 /** The return date a monthly rental runs to, given its pickup day. */
 export function monthlyReturnDate(pickupDate: string): string {
@@ -226,14 +187,8 @@ export interface Quote {
   /** Cents. The daily rate for a daily rental, the monthly rate for a monthly
    *  one. What the total was built from, whichever product this is. */
   rateCents: number;
-  /** Cents, before any discount. Equals totalCents when nothing applied. */
-  subtotalCents: number;
-  /** 0 when no tier applied. */
-  discountPct: number;
-  /** Cents taken off. Stored on the booking so the saving is a fact, not a
-   *  number re-derived later from a rate that may since have changed. */
-  discountCents: number;
-  /** Cents. What the guest is charged. */
+  /** Cents. What the guest is charged: days x rateCents for a daily rental,
+   *  rateCents itself for a monthly one. */
   totalCents: number;
 }
 
@@ -294,9 +249,6 @@ export function quoteRental(input: {
         rentalType: "monthly",
         days,
         rateCents: input.rates.monthlyRateCents,
-        subtotalCents: input.rates.monthlyRateCents,
-        discountPct: 0,
-        discountCents: 0,
         totalCents: input.rates.monthlyRateCents,
       },
     };
@@ -309,22 +261,14 @@ export function quoteRental(input: {
     return { ok: false, reason: "custom_quote", message: CUSTOM_QUOTE_MESSAGE, days };
   }
 
-  const subtotalCents = input.rates.dailyRateCents * days;
-  const discountPct = discountPctForDays(days);
-  // Rounded once, off the subtotal, so the parts always add up to the total —
-  // a per-day rounding would leave a stray cent on long rentals.
-  const discountCents = Math.round((subtotalCents * discountPct) / 100);
-
   return {
     ok: true,
     quote: {
       rentalType: "daily",
       days,
       rateCents: input.rates.dailyRateCents,
-      subtotalCents,
-      discountPct,
-      discountCents,
-      totalCents: subtotalCents - discountCents,
+      // Integer cents times an integer day count: exact, nothing to round.
+      totalCents: input.rates.dailyRateCents * days,
     },
   };
 }

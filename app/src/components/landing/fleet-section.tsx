@@ -5,7 +5,7 @@ import { FLEET, type Vehicle } from '../../content/brand'
 import InsuranceInfo from '../site/insurance-info'
 import { MIN_AGE_NOTE } from '../../content/rental-info'
 import { CURRENCY_CODE } from '../../lib/money'
-import { DISCOUNT_TIER_SUMMARY, MIN_RENTAL_DAYS } from '../../lib/booking/rental'
+import { MIN_RENTAL_DAYS } from '../../lib/booking/rental'
 
 /**
  * The fleet, a single aligned grid: identical cards on an even gutter.
@@ -70,16 +70,9 @@ export default function FleetSection() {
             every message.
           </p>
 
-          {/* The discount ladder, said once, in the place a guest is choosing a
-              car. Built from DISCOUNT_TIERS, so it cannot drift from what the
-              server actually takes off at checkout. */}
-          <p className="mx-auto mt-6 inline-flex flex-wrap items-center justify-center gap-x-2 rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-cw-navy shadow-[0_2px_10px_rgba(2,48,71,0.06)]">
-            <span>Longer stays save more:</span>
-            <span className="font-normal text-cw-ink/80">{DISCOUNT_TIER_SUMMARY}.</span>
-          </p>
-          <p className="mt-3 text-sm text-cw-ink/65">
-            Prices in {CURRENCY_CODE}. Minimum rental {MIN_RENTAL_DAYS} days. Staying a month or
-            more? Ask us, we do monthly rates too.
+          <p className="mt-6 text-sm text-cw-ink/65">
+            Prices in {CURRENCY_CODE}. Minimum rental {MIN_RENTAL_DAYS} days. Staying a month?
+            Every car has a flat monthly rate, shown on its card.
           </p>
           <p className="mt-2 text-sm font-semibold text-cw-navy">{MIN_AGE_NOTE}.</p>
           <InsuranceInfo className="mx-auto mt-6 max-w-[640px]" />

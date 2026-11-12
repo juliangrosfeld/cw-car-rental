@@ -21,8 +21,7 @@
  *   daily_rate   the rate for FUTURE quotes only. `bookings.total_price` was
  *   monthly_rate struck when the booking was taken and is never recomputed from
  *                these columns — see the note on quotedPerDayCents in ./types. A
- *                rate rise cannot reprice a reservation a guest already holds,
- *                and neither can a change to the discount tiers.
+ *                rate rise cannot reprice a reservation a guest already holds.
  *
  *                The two are independent prices, not one derived from the other:
  *                monthly_rate is the flat price of a ~30-day rental, and setting

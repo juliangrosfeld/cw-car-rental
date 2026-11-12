@@ -63,8 +63,8 @@ export interface Database {
            *  looks like. Not necessarily the colour of the unit a guest is
            *  handed — that is `vehicles.color`. */
           color: string;
-          /** Cents per rental day, undiscounted. Length discounts are applied
-           *  on top by the server — see DISCOUNT_TIERS in ../booking/rental. */
+          /** Cents per rental day. A daily rental is days x this; see
+           *  quoteRental in ../booking/rental. */
           daily_rate: number;
           /** Cents for a ~30-day monthly rental. Flat, NOT 30 x daily_rate.
            *  0 means this car is not offered monthly. */
@@ -195,14 +195,17 @@ export interface Database {
           pickup_location: string;
           return_location: string;
           flight_number: string | null;
-          /** Cents, quoted at booking time and already NET of any discount. */
+          /** Cents, the final total the guest owes, as struck at booking time. */
           total_price: number;
           /** Which product was sold. A 30-day daily rental and a monthly rental
            *  look identical on a calendar and cost very differently. */
           rental_type: RentalTypeValue;
-          /** The length-discount tier that applied, 0 if none. As struck. */
+          /** HISTORIC. Length discounts were removed in Nov 2026: every booking
+           *  since writes 0. Bookings made before then keep the tier that was
+           *  applied to them, which is why the column is not dropped. */
           discount_pct: number;
-          /** Cents taken off. Pre-discount total is total_price + this. */
+          /** HISTORIC, as above. Cents that were taken off an older booking;
+           *  its pre-discount total is total_price + this. 0 on every new one. */
           discount_cents: number;
           booking_status: BookingStatus;
           payment_status: PaymentStatus;

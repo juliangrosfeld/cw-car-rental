@@ -29,8 +29,8 @@
  *   · a licence that expires before its own rental ends
  *   · a long rental crossing two month boundaries, and bookings in next month
  *     only, so the month navigation has somewhere to go
- *   · a rental at the 3-day minimum, and one in EACH discount tier (7+, 14+,
- *     21+), so a breakdown that forgets to subtract shows up as a wrong total
+ *   · a rental at the 3-day minimum, and ones of 7+, 14+ and 21+ days, which
+ *     once earned a percentage off and must now total exactly days x rate
  *   · a monthly rental, which occupies a car like any other booking but is
  *     priced from a different column entirely
  *
@@ -38,8 +38,8 @@
  * owner may have set, and a fixture script has no business editing it.
  *
  * PRICES ARE NEVER INVENTED: every total goes through quoteRental() with the
- * rates read from the cars table, exactly as the booking flow computes it —
- * discount tiers included. A fixture that the price book refuses is a mistake in
+ * rates read from the cars table, exactly as the booking flow computes it.
+ * A fixture that the price book refuses is a mistake in
  * this file and fails the run, which is the point: the fixture set cannot drift
  * into prices the real flow could never produce. The one deliberate exception is
  * `legacy`, below.
@@ -399,7 +399,7 @@ const FIXTURES: Fixture[] = [
   },
   {
     exercises:
-      "MONTHLY rental crossing two month boundaries — flat monthly rate, no per-day maths, no discount tier on top",
+      "MONTHLY rental crossing two month boundaries — flat monthly rate, no per-day maths",
     guest: {
       name: "Isabel Fernández",
       phone: "+34 655 220 913",
@@ -622,7 +622,7 @@ const FIXTURES: Fixture[] = [
   },
   {
     exercises:
-      "AT THE MINIMUM: exactly 3 days, the shortest rental the flow will take, and NO discount — the row that proves a tier is not applied to everything",
+      "AT THE MINIMUM: exactly 3 days, the shortest rental the flow will take. Total must be 3 x the daily rate",
     guest: {
       name: "Naomi Leito",
       phone: "+599 9 522 4417",
@@ -664,7 +664,7 @@ const FIXTURES: Fixture[] = [
   },
   {
     exercises:
-      "TIER 2: 14 days, so 10% comes off. Total must be less than 14 x the daily rate everywhere it is shown",
+      "14 DAYS: total must be exactly 14 x the daily rate everywhere it is shown (this length used to earn 10% off)",
     guest: {
       name: "Hannah Lindqvist",
       phone: "+46 70 442 1180",
@@ -683,11 +683,11 @@ const FIXTURES: Fixture[] = [
     prepStatus: "booked",
     specialRequests: "Two weeks, mostly diving. Roof space for tanks would help.",
     adminNotes:
-      "Two week discount applied automatically at booking. Do not discount again by hand.",
+      "Two weeks at the daily rate. Asked about a long-stay price; told the monthly rate is the one.",
   },
   {
     exercises:
-      "TIER 3: 24 days, so 15% comes off — and it is still under the 27-day self-service ceiling, which the next one is not",
+      "24 DAYS: total must be exactly 24 x the daily rate (this length used to earn 15% off) — and it is still under the 27-day self-service ceiling, which the next one is not",
     guest: {
       name: "Victor Amaral",
       phone: "+55 21 99884 3320",
@@ -857,7 +857,6 @@ async function seed() {
     label: string;
     type: string;
     days: number;
-    discount: string;
     total: number;
     pickup: string;
     return: string;
@@ -914,15 +913,13 @@ async function seed() {
     }
 
     // THE price rule, not a made-up number: the rates from the database through
-    // the same quoteRental() the public booking flow uses, tiers and all.
+    // the same quoteRental() the public booking flow uses.
     //
     // A refusal is fatal by design. It means this file describes a rental CW
     // does not sell (too short, past the self-service ceiling, monthly on a car
     // with no monthly rate), and seeding it anyway would put a price in the
     // database that no code path could ever produce.
     let totalCents: number;
-    let discountPct = 0;
-    let discountCents = 0;
 
     if (fixture.legacy) {
       // Deliberately outside the price book — see `legacy` on the Fixture type.
@@ -942,8 +939,6 @@ async function seed() {
         );
       }
       totalCents = priced.quote.totalCents;
-      discountPct = priced.quote.discountPct;
-      discountCents = priced.quote.discountCents;
     }
 
     const { data: booking, error: bookingError } = await db
@@ -961,8 +956,8 @@ async function seed() {
         flight_number: fixture.flightNumber ?? null,
         total_price: totalCents,
         rental_type: rentalType,
-        discount_pct: discountPct,
-        discount_cents: discountCents,
+        discount_pct: 0,
+        discount_cents: 0,
         booking_status: fixture.bookingStatus,
         payment_status: fixture.paymentStatus,
         prep_status: fixture.prepStatus,
@@ -1065,7 +1060,6 @@ async function seed() {
       label: `${fixture.guest.name} · ${car.model} ${car.color} · ${fixture.prepStatus}`,
       type: fixture.legacy ? "legacy" : rentalType,
       days: rentalDays(pickupDate, returnDate),
-      discount: discountPct > 0 ? `${discountPct}% (${formatMoney(discountCents)})` : "—",
       total: totalCents,
       pickup: pickupDate,
       return: returnDate,
@@ -1080,7 +1074,6 @@ async function seed() {
       pickup: r.pickup,
       return: r.return,
       days: r.days,
-      discount: r.discount,
       total: formatMoney(r.total),
     })),
   );

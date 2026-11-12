@@ -13,8 +13,7 @@
  * That guarantee now covers three things, not one, because there are three ways
  * a crafted request could otherwise pay less than the price list says:
  *   · the RATE — read from the cars row, never accepted from the request;
- *   · the LENGTH DISCOUNT — derived from dates the server resolved, so a client
- *     cannot claim a 15% tier on a four-day rental;
+ *   · the DAY COUNT — derived from dates the server resolved, never sent;
  *   · the RENTAL TYPE — a monthly booking's return date is derived here, so a
  *     request cannot buy a 90-day stay at the one-month rate.
  * All three live in quoteRental() in ./rental, which this module calls with
@@ -545,10 +544,6 @@ export interface BookingConfirmation {
   /** Cents. The daily rate for a daily rental, the monthly rate for a monthly
    *  one — whichever the total was built from. */
   rateCents: number;
-  /** Cents before the discount. Equals totalCents when none applied. */
-  subtotalCents: number;
-  discountPct: number;
-  discountCents: number;
   totalCents: number;
   bookingStatus: Booking["booking_status"];
   paymentStatus: Booking["payment_status"];
@@ -683,8 +678,8 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
     };
   }
 
-  // THE price. Rates from the database, dates resolved above, tier derived from
-  // the day count — a refusal here (too short, too long to self-serve, no
+  // THE price. Rates from the database, dates resolved above, days x rate or the
+  // flat monthly rate — a refusal here (too short, too long to self-serve, no
   // monthly rate on this car) is a thing to tell the guest, not a 500.
   const priced = quoteRental({
     rentalType: input.rentalType,
@@ -732,8 +727,10 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
     flight_number: input.flightNumber?.trim() || null,
     total_price: quote.totalCents,
     rental_type: quote.rentalType,
-    discount_pct: quote.discountPct,
-    discount_cents: quote.discountCents,
+    // Length discounts no longer exist. The columns stay (older bookings carry
+    // real values in them) and every new booking writes zero.
+    discount_pct: 0,
+    discount_cents: 0,
     special_requests: input.specialRequests?.trim() || null,
     booking_status: "confirmed",
     // Stamped here, by the server's clock: when the acceptance was received,
@@ -776,9 +773,6 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
       rentalType: booking.rental_type,
       days: quote.days,
       rateCents: quote.rateCents,
-      subtotalCents: quote.subtotalCents,
-      discountPct: booking.discount_pct,
-      discountCents: booking.discount_cents,
       totalCents: booking.total_price,
       bookingStatus: booking.booking_status,
       paymentStatus: booking.payment_status,
@@ -812,12 +806,13 @@ export async function getBookingConfirmation(
 
   // Rebuilt from what was STORED, never re-quoted. The rates in `cars` may have
   // moved since; a guest reloading their confirmation must see the price they
-  // were given, and the arithmetic must still add up, so the subtotal is
-  // reconstructed from the total and the discount rather than from a rate.
+  // were given, and the arithmetic must still add up, so the per-day figure is
+  // derived from the stored total. (For a booking from before Nov 2026 that
+  // carried a length discount, or one an admin priced by hand, that is the
+  // effective rate actually paid per day, which is the honest number to show.)
   const days = rentalDays(data.pickup_date, data.return_date);
-  const subtotalCents = data.total_price + data.discount_cents;
   const rateCents =
-    data.rental_type === "monthly" ? data.total_price : Math.round(subtotalCents / days);
+    data.rental_type === "monthly" ? data.total_price : Math.round(data.total_price / days);
 
   return {
     bookingId: data.id,
@@ -840,9 +835,6 @@ export async function getBookingConfirmation(
     rentalType: data.rental_type,
     days,
     rateCents,
-    subtotalCents,
-    discountPct: data.discount_pct,
-    discountCents: data.discount_cents,
     totalCents: data.total_price,
     bookingStatus: data.booking_status,
     paymentStatus: data.payment_status,

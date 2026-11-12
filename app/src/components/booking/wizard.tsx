@@ -22,7 +22,6 @@ import {
   LICENSE_PHOTO_TYPES,
 } from '../../lib/booking/license'
 import {
-  DISCOUNT_TIERS,
   HANDOVER_TIMES,
   MAX_SELF_SERVICE_DAYS,
   MIN_RENTAL_DAYS,
@@ -62,8 +61,8 @@ import CountrySelect from './country-select'
  * stays editable from any later step without losing progress.
  *
  * WHY "RENTAL" COMES FIRST. Daily and monthly are two products, not two ways of
- * saying the same thing: one is a date range billed per day with a length
- * discount, the other a flat monthly rate for a fixed period. That choice
+ * saying the same thing: one is a date range billed per day (days x the daily
+ * rate), the other a flat monthly rate for a fixed period. That choice
  * changes what the calendar does and what every price on the following screens
  * means, so it cannot be an afterthought at the end.
  *
@@ -441,12 +440,6 @@ export default function BookingWizard({ initialCarId }: { initialCarId?: string 
           <p className="mt-5 text-center text-sm text-cw-ink/70">
             {car.model} · {fmtDay(fromKey(startKey))} → {fmtDay(fromKey(endKey))} ·{' '}
             {formatMoney(currentQuote.totalCents)} total
-            {currentQuote.discountPct > 0 && (
-              <span className="font-semibold text-cw-teal-dark">
-                {' '}
-                ({currentQuote.discountPct}% off)
-              </span>
-            )}
           </p>
         )}
 
@@ -726,8 +719,9 @@ function RentalTypeStep({
       title: 'By the day',
       lead: `Pick your dates. Minimum ${MIN_RENTAL_DAYS} days.`,
       points: [
-        ...DISCOUNT_TIERS.map((t) => `${t.label}: ${t.pct}% off automatically`).reverse(),
+        'One daily rate, times the days you keep the car',
         `Up to ${MAX_SELF_SERVICE_DAYS} days online, longer is a quick chat with us`,
+        'Free pickup and drop-off anywhere in Curaçao',
       ],
     },
     {
@@ -1333,11 +1327,6 @@ function CarOption({
               ? `flat rate, ${q.days} days`
               : `${formatMoney(q.rateCents)} × ${q.days} ${q.days === 1 ? 'day' : 'days'}`}
           </span>
-          {q.discountPct > 0 && (
-            <span className="mt-1 inline-block rounded-full bg-cw-mint px-2 py-0.5 text-[11px] font-bold text-cw-navy">
-              {q.discountPct}% off applied
-            </span>
-          )}
         </p>
       </div>
     </button>
@@ -1555,7 +1544,6 @@ function ReviewStep({
   /** Shown only after a Continue without the box: nagging before the guest has
    *  even reached the checkbox would be noise. */
   const [termsError, setTermsError] = useState(false)
-  const tier = DISCOUNT_TIERS.find((t) => t.pct === q.discountPct)
   return (
     <div>
       <StepHeading title="Look it over" sub="Everything stays editable until you confirm." />
@@ -1596,8 +1584,7 @@ function ReviewStep({
         </ReviewRow>
       </dl>
 
-      {/* The discount gets its own line, with the tier named. A saving that only
-          shows up as a smaller total is a saving the guest cannot check. */}
+      {/* The arithmetic in full: rate times days, free delivery, total. */}
       <div className="mt-7 rounded-xl bg-cw-mint-soft p-5">
         <p className="font-display text-sm font-bold uppercase tracking-widest text-cw-teal-dark">
           Price breakdown
@@ -1609,16 +1596,8 @@ function ReviewStep({
                 ? `Monthly rate · ${q.days} days`
                 : `${formatMoney(q.rateCents)} × ${q.days} ${q.days === 1 ? 'day' : 'days'}`}
             </dt>
-            <dd className="font-semibold text-cw-navy">{formatMoney(q.subtotalCents)}</dd>
+            <dd className="font-semibold text-cw-navy">{formatMoney(q.totalCents)}</dd>
           </div>
-          {q.discountCents > 0 && (
-            <div className="flex justify-between text-cw-teal-dark">
-              <dt className="font-semibold">
-                {tier ? tier.label : 'Long stay'} · {q.discountPct}% off
-              </dt>
-              <dd className="font-semibold">− {formatMoney(q.discountCents)}</dd>
-            </div>
-          )}
           <div className="flex justify-between">
             <dt>Pickup and drop-off</dt>
             <dd className="font-semibold text-cw-teal-dark">Free</dd>
@@ -1633,12 +1612,6 @@ function ReviewStep({
           </div>
         </dl>
         <p className="mt-3 text-xs text-cw-ink/65">{FULL_PRICE_NOTE}</p>
-        {q.rentalType === 'daily' && q.discountPct === 0 && q.days < DISCOUNT_TIERS[2].minDays && (
-          <p className="mt-3 text-xs text-cw-ink/65">
-            Stay {DISCOUNT_TIERS[2].minDays} days or more and {DISCOUNT_TIERS[2].pct}% comes off
-            automatically.
-          </p>
-        )}
       </div>
 
       {/* Insurance, in the same words as the fleet section, before the guest
@@ -1759,11 +1732,6 @@ function PayStep({
           {fmtDay(start)} → {fmtDay(end)} ·{' '}
           {q.rentalType === 'monthly' ? 'monthly rate' : `${q.days} days`}
         </p>
-        {q.discountCents > 0 && (
-          <p className="mt-2 inline-block rounded-full bg-cw-mint px-3 py-1 text-xs font-bold text-cw-navy">
-            {q.discountPct}% long stay discount, {formatMoney(q.discountCents)} off
-          </p>
-        )}
         {error && (
           <p className="mt-4 rounded-xl bg-[#fdeceb] px-4 py-3 text-sm font-semibold text-[#b3271d]">
             {error}

@@ -63,7 +63,7 @@ import {
   formatMoney,
   formatTime,
 } from "../../../lib/admin/format";
-import { DISCOUNT_TIER_SUMMARY, MONTHLY_PERIOD_DAYS } from "../../../lib/booking/rental";
+import { MONTHLY_PERIOD_DAYS } from "../../../lib/booking/rental";
 import type { VehicleStatus } from "../../../lib/supabase/types";
 import type { FleetCarDetail, FleetVehicleRow } from "../../../lib/admin/types";
 
@@ -523,8 +523,7 @@ function ListingEditor({ car }: { car: FleetCarDetail }) {
             <span className="whitespace-nowrap text-[12px] text-cw-ink/50">/ day</span>
           </span>
           <span className="mt-1 block text-[11px] text-cw-ink/50">
-            The list rate. Length discounts ({DISCOUNT_TIER_SUMMARY}) come off this automatically at
-            checkout, so do not build them in here.
+            The list rate. A daily rental is charged at this rate times the number of days.
           </span>
         </label>
 
@@ -548,7 +547,7 @@ function ListingEditor({ car }: { car: FleetCarDetail }) {
             </span>
           </span>
           <span className="mt-1 block text-[11px] text-cw-ink/50">
-            A flat price for a {MONTHLY_PERIOD_DAYS} day rental, with no further discount on top.
+            A flat price for a {MONTHLY_PERIOD_DAYS} day rental.
             Set 0 to stop offering this car by the month.
           </span>
         </label>

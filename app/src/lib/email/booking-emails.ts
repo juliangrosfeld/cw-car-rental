@@ -207,15 +207,7 @@ export function renderAdminAlert(
     {
       label: "Total",
       value: formatMoney(c.totalCents),
-      details:
-        c.discountCents > 0
-          ? [
-              {
-                text: `${c.discountPct}% discount, ${formatMoney(c.discountCents)} off`,
-                emphasis: true,
-              },
-            ]
-          : [],
+      details: [],
     },
     {
       label: "Payment",

@@ -244,7 +244,9 @@ export interface BookingDetail {
    * from the booking, where it was recorded at the time.
    */
   rentalType: RentalTypeValue;
-  /** The length-discount tier that applied, as struck. 0 for none, and always 0
+  /** HISTORIC: length discounts were removed in Nov 2026 and new bookings carry
+   *  0. Kept so a booking made before then still shows what it was given.
+   *  The length-discount tier that applied, as struck. 0 for none, and always 0
    *  for a monthly rental (the monthly rate IS the long-stay price). */
   discountPct: number;
   /** Cents taken off. `totalCents` is already net of it. */

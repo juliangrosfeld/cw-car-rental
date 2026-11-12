@@ -85,8 +85,6 @@ export interface ConfirmationDetails {
   rentalType: RentalType;
   days: number;
   rateCents: number;
-  discountPct: number;
-  discountCents: number;
   totalCents: number;
   bookingStatus: BookingStatus;
   paymentStatus: PaymentStatus;
@@ -95,8 +93,8 @@ export interface ConfirmationDetails {
 export interface ConfirmationRow {
   label: string;
   value: string;
-  /** Smaller lines under the value. `emphasis` marks the one worth noticing
-   *  (a discount), which the screen tints and the email bolds. */
+  /** Smaller lines under the value. `emphasis` marks one worth noticing,
+   *  which the screen tints and the email bolds. */
   details: { text: string; emphasis?: boolean }[];
 }
 
@@ -142,14 +140,6 @@ export function confirmationRows(c: ConfirmationDetails): ConfirmationRow[] {
               ? "flat monthly rate"
               : `${formatMoney(c.rateCents)} × ${dayCount}`,
         },
-        ...(c.discountCents > 0
-          ? [
-              {
-                text: `${c.discountPct}% long stay discount, ${formatMoney(c.discountCents)} off`,
-                emphasis: true,
-              },
-            ]
-          : []),
       ],
     },
     { label: "Status", value: BOOKING_STATUS_LABEL[c.bookingStatus], details: [] },

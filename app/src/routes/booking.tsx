@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import BookingWizard from "../components/booking/wizard";
-import { DISCOUNT_TIER_SUMMARY, MIN_RENTAL_DAYS } from "../lib/booking/rental";
+import { MIN_RENTAL_DAYS } from "../lib/booking/rental";
 import { MIN_AGE_NOTE } from "../content/rental-info";
 import { CURRENCY_CODE } from "../lib/money";
 
@@ -37,14 +37,12 @@ function BookingPage() {
           Two minutes, six steps, zero paperwork at pickup.
         </p>
         {/* The price rules a guest needs BEFORE they start picking days: what
-            currency, the shortest rental we take, and what length earns. All
-            three come from the pricing module the server quotes from. */}
+            currency, the shortest rental we take, and the minimum age. */}
         <p className="mx-auto mt-4 max-w-[62ch] rounded-xl bg-white px-5 py-3 text-center text-sm leading-relaxed text-cw-ink/80 shadow-[0_2px_10px_rgba(2,48,71,0.06)]">
           <span className="font-semibold text-cw-navy">
             All prices in {CURRENCY_CODE}. Minimum rental {MIN_RENTAL_DAYS} days. {MIN_AGE_NOTE}.
           </span>{" "}
-          Longer stays save more: {DISCOUNT_TIER_SUMMARY}. Renting for a month? Pick the monthly
-          rate on the first step.
+Renting for a month? Pick the flat monthly rate on the first step.
         </p>
         <div className="mt-10">
           <BookingWizard initialCarId={car} />

@@ -984,10 +984,10 @@ export async function createManualBooking(input: ManualBookingInput): Promise<Ma
       flight_number: input.flightNumber?.trim() || null,
       total_price: finalTotalCents,
       rental_type: quote.rentalType,
-      // A hand-set price is not "the list price less a discount", so the
-      // discount columns stay at zero for it.
-      discount_pct: override ? 0 : quote.discountPct,
-      discount_cents: override ? 0 : quote.discountCents,
+      // Length discounts no longer exist. The columns stay (older bookings
+      // carry real values in them) and every new booking writes zero.
+      discount_pct: 0,
+      discount_cents: 0,
       price_override_cents: override ? override.totalCents : null,
       price_override_note: override ? override.note?.trim() || null : null,
       standard_price_cents: override ? quote.totalCents : null,

@@ -215,10 +215,11 @@ export const createLicenseUpload = createServerFn({ method: "POST" })
 
 /**
  * Create a booking. NOTE what is absent from the input schema: there is no
- * price field, no day count and no discount. All three are computed server-side
- * from the car's rates and the dates the server resolved, so a crafted request
- * cannot influence what the guest is charged — not by naming a price, not by
- * claiming a discount tier, and not by stretching a monthly period.
+ * price field and no day count. Both are computed server-side from the car's
+ * rates and the dates the server resolved, so a crafted request cannot influence
+ * what the guest is charged — not by naming a price, and not by stretching a
+ * monthly period. Unknown keys such as `totalPrice` are dropped by the schema
+ * before the handler ever sees them.
  *
  * Returns a discriminated result rather than throwing on the expected failures
  * (car taken, car off the road, rental too short, rental long enough to need a

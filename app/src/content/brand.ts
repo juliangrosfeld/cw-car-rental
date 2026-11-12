@@ -92,7 +92,7 @@ export interface Vehicle {
   tagline: string
   seats: number
   transmission: 'Automatic' | 'Manual'
-  /** Whole XCG per rental day, undiscounted. Mirrors cars.daily_rate in the
+  /** Whole XCG per rental day. Mirrors cars.daily_rate in the
    *  database (which is in cents) — the marketing grid is static content, so
    *  the two are kept in step by hand whenever rates move. */
   pricePerDay: number
@@ -105,9 +105,9 @@ export interface Vehicle {
   accent: 'peach' | 'yellow' | 'mint' | 'pink' | 'teal'
 }
 
-/** The real CW fleet, at the confirmed XCG price list (Aug 2026). Length
- *  discounts are NOT baked into these numbers — they are applied by the server
- *  at quote time; see DISCOUNT_TIERS in src/lib/booking/rental.ts. */
+/** The real CW fleet, at the confirmed XCG price list (Aug 2026). A daily
+ *  rental is days x pricePerDay and a monthly one is pricePerMonth, flat;
+ *  see quoteRental in src/lib/booking/rental.ts. */
 export const FLEET: Vehicle[] = [
   {
     id: 'mazda-3-grey',

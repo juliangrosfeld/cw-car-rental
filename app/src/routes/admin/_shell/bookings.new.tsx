@@ -656,13 +656,6 @@ function NewBookingPage() {
                     ) : (
                       <>
                         {formatMoney(quote.quote.rateCents)} × {quote.quote.days} days
-                        {quote.quote.discountPct > 0 && (
-                          <>
-                            {" "}
-                            less {quote.quote.discountPct}% (
-                            {formatMoney(quote.quote.discountCents)})
-                          </>
-                        )}
                       </>
                     )}
                   </p>

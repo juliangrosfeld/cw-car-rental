@@ -214,10 +214,11 @@ function BookingDetailPage() {
               value={monthly ? "Monthly · flat rate" : "Daily · per day"}
               hint={
                 monthly
-                  ? "Booked at the car's monthly rate. Length discounts do not apply on top."
+                  ? "Booked at the car's flat monthly rate."
                   : booking.discountPct > 0
-                    ? `${booking.discountPct}% long stay discount applied`
-                    : "No length discount applied"
+                    ? // Only a booking from before Nov 2026 can carry one.
+                      `${booking.discountPct}% long stay discount applied when it was booked`
+                    : "Days times the daily rate"
               }
             />
             {/* Listing and vehicle, labelled as the different things they are.
@@ -294,7 +295,11 @@ function BookingDetailPage() {
               </div>
             )}
 
-            {/* The discount is shown as a line of arithmetic, not as a badge:
+            {/* HISTORIC ONLY. Length discounts were removed in Nov 2026, so this
+                block renders for bookings made before then and for nothing new.
+                It stays because those bookings really were charged less, and
+                hiding the line would make their total look like a mistake.
+                The discount is shown as a line of arithmetic, not as a badge:
                 the useful question in the back office is "what did they pay and
                 what came off", and a percentage alone cannot answer it. */}
             {booking.discountCents > 0 && (
