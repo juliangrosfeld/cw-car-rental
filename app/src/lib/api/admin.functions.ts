@@ -11,8 +11,9 @@
  * If you add a function to this file, the first line of its handler is
  * `await requireAdmin()`. The only handlers without it are the ones that exist
  * for someone who is NOT signed in yet: `adminSignIn` (validates a password),
- * `adminRequestPasswordReset` (reveals nothing) and `adminCompletePasswordReset`
- * (authorised by the emailed recovery tokens). None of them reads CRM data.
+ * `adminRequestPasswordReset` (reveals nothing), `adminCompletePasswordReset`
+ * (authorised by the emailed recovery tokens) and the two invite functions
+ * (authorised by a one-time invite token). None of them reads CRM data.
  */
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
@@ -29,6 +30,7 @@ import {
   signOutAdmin,
   type AdminIdentity,
 } from "../auth/admin.server";
+import { acceptAdminInvite, isAdminInviteValid } from "../auth/invite.server";
 import { getDashboardData } from "../admin/dashboard.server";
 import {
   createManualBooking,
@@ -119,6 +121,39 @@ export const adminCompletePasswordReset = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => completeAdminPasswordReset(data));
+
+/** The token in an invite link: 32 random bytes, base64url. */
+const inviteToken = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
+
+/** Is this invite link still usable? Decides whether /admin/invite shows the
+ *  form. Unauthenticated; the token is the authorisation. */
+export const adminCheckInvite = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ token: inviteToken }))
+  .handler(async ({ data }) => ({ valid: await isAdminInviteValid(data.token) }));
+
+/**
+ * Create an admin login from a one-time invite link. The token IS the
+ * authorisation: it only exists in a link minted with the service role key and
+ * handed over privately. See src/lib/auth/invite.server.ts.
+ */
+export const adminAcceptInvite = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      token: inviteToken,
+      email: z
+        .string()
+        .trim()
+        .min(1, "Enter your email address.")
+        .max(254)
+        .email("That is not an email address."),
+      // Never trimmed: a space is a legitimate password character.
+      password: z
+        .string()
+        .min(ADMIN_PASSWORD_MIN_LENGTH, `Use at least ${ADMIN_PASSWORD_MIN_LENGTH} characters.`)
+        .max(200),
+    }),
+  )
+  .handler(async ({ data }) => acceptAdminInvite(data));
 
 /** Sign out. Always succeeds from the caller's point of view — the cookies are
  *  cleared before the token revocation is even attempted. */

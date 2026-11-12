@@ -315,6 +315,27 @@ export interface Database {
           },
         ];
       };
+      /** One-time admin invite links. Service role only (RLS on, no policies). */
+      admin_invites: {
+        Row: {
+          id: string;
+          /** SHA-256 hex of the token in the link. The token itself is never stored. */
+          token_hash: string;
+          expires_at: string;
+          used_at: string | null;
+          used_by_email: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          token_hash: string;
+          expires_at: string;
+          used_at?: string | null;
+          used_by_email?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["admin_invites"]["Insert"]>;
+        Relationships: [];
+      };
     };
     Views: Record<never, never>;
     Functions: {

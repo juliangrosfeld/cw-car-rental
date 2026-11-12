@@ -17,6 +17,7 @@ import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as AdminShellRouteImport } from './routes/admin/_shell'
 import { Route as AdminForgotPasswordRouteImport } from './routes/admin/forgot-password'
+import { Route as AdminInviteRouteImport } from './routes/admin/invite'
 import { Route as AdminLoginRouteImport } from './routes/admin/login'
 import { Route as AdminResetPasswordRouteImport } from './routes/admin/reset-password'
 import { Route as AdminShellIndexRouteImport } from './routes/admin/_shell/index'
@@ -68,6 +69,11 @@ const AdminShellRoute = AdminShellRouteImport.update({
 const AdminForgotPasswordRoute = AdminForgotPasswordRouteImport.update({
   id: '/admin/forgot-password',
   path: '/admin/forgot-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminInviteRoute = AdminInviteRouteImport.update({
+  id: '/admin/invite',
+  path: '/admin/invite',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminLoginRoute = AdminLoginRouteImport.update({
@@ -142,6 +148,7 @@ export interface FileRoutesByFullPath {
   '/terms': typeof TermsRoute
   '/admin': typeof AdminShellRouteWithChildren
   '/admin/forgot-password': typeof AdminForgotPasswordRoute
+  '/admin/invite': typeof AdminInviteRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/reset-password': typeof AdminResetPasswordRoute
   '/admin/': typeof AdminShellIndexRoute
@@ -163,6 +170,7 @@ export interface FileRoutesByTo {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/terms': typeof TermsRoute
   '/admin/forgot-password': typeof AdminForgotPasswordRoute
+  '/admin/invite': typeof AdminInviteRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/reset-password': typeof AdminResetPasswordRoute
   '/admin': typeof AdminShellIndexRoute
@@ -186,6 +194,7 @@ export interface FileRoutesById {
   '/terms': typeof TermsRoute
   '/admin/_shell': typeof AdminShellRouteWithChildren
   '/admin/forgot-password': typeof AdminForgotPasswordRoute
+  '/admin/invite': typeof AdminInviteRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/reset-password': typeof AdminResetPasswordRoute
   '/admin/_shell/': typeof AdminShellIndexRoute
@@ -210,6 +219,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/admin'
     | '/admin/forgot-password'
+    | '/admin/invite'
     | '/admin/login'
     | '/admin/reset-password'
     | '/admin/'
@@ -231,6 +241,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/terms'
     | '/admin/forgot-password'
+    | '/admin/invite'
     | '/admin/login'
     | '/admin/reset-password'
     | '/admin'
@@ -253,6 +264,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/admin/_shell'
     | '/admin/forgot-password'
+    | '/admin/invite'
     | '/admin/login'
     | '/admin/reset-password'
     | '/admin/_shell/'
@@ -276,6 +288,7 @@ export interface RootRouteChildren {
   TermsRoute: typeof TermsRoute
   AdminShellRoute: typeof AdminShellRouteWithChildren
   AdminForgotPasswordRoute: typeof AdminForgotPasswordRoute
+  AdminInviteRoute: typeof AdminInviteRoute
   AdminLoginRoute: typeof AdminLoginRoute
   AdminResetPasswordRoute: typeof AdminResetPasswordRoute
 }
@@ -336,6 +349,13 @@ declare module '@tanstack/react-router' {
       path: '/admin/forgot-password'
       fullPath: '/admin/forgot-password'
       preLoaderRoute: typeof AdminForgotPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/invite': {
+      id: '/admin/invite'
+      path: '/admin/invite'
+      fullPath: '/admin/invite'
+      preLoaderRoute: typeof AdminInviteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/login': {
@@ -464,6 +484,7 @@ const rootRouteChildren: RootRouteChildren = {
   TermsRoute: TermsRoute,
   AdminShellRoute: AdminShellRouteWithChildren,
   AdminForgotPasswordRoute: AdminForgotPasswordRoute,
+  AdminInviteRoute: AdminInviteRoute,
   AdminLoginRoute: AdminLoginRoute,
   AdminResetPasswordRoute: AdminResetPasswordRoute,
 }

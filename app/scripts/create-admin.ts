@@ -5,6 +5,12 @@
  *   bun run scripts/create-admin.ts info@cw-carrental.com          # promote only
  *   bun run scripts/create-admin.ts --list
  *   bun run scripts/create-admin.ts --revoke info@cw-carrental.com
+ *   bun run scripts/create-admin.ts --invite https://cw-carrental.com
+ *   bun run scripts/create-admin.ts --cancel-invites
+ *
+ * --invite prints a one-time link (valid 7 days) where the recipient chooses
+ * their own login email and password. Whoever opens it first becomes an admin,
+ * so send it privately. --cancel-invites kills every link not yet used.
  *
  * WHY A SCRIPT AND NOT A SIGNUP PAGE
  * Admin is `app_metadata.role = 'admin'`, and app_metadata is writable only with
@@ -19,6 +25,8 @@
  * never printed. It must be the SERVICE ROLE key, not the publishable one.
  */
 import process from "node:process";
+
+import { createHash, randomBytes } from "node:crypto";
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -140,6 +148,45 @@ async function grant(email: string, password: string | undefined) {
   );
 }
 
+const INVITE_DAYS = 7;
+
+async function invite(origin: string) {
+  let base: URL;
+  try {
+    base = new URL(origin);
+  } catch {
+    fail(`--invite needs the site address, e.g. --invite https://cw-carrental.com`);
+  }
+  const local = base.hostname === "localhost" || base.hostname === "127.0.0.1";
+  if (base.protocol !== "https:" && !local) fail("The site address must start with https://");
+
+  // The token goes in the URL fragment, which browsers never send to a server,
+  // so it stays out of access logs. Only its hash is stored.
+  const token = randomBytes(32).toString("base64url");
+  const expires = new Date(Date.now() + INVITE_DAYS * 24 * 60 * 60 * 1000);
+  const { error } = await admin.from("admin_invites").insert({
+    token_hash: createHash("sha256").update(token).digest("hex"),
+    expires_at: expires.toISOString(),
+  });
+  if (error) fail(`Could not create the invite: ${error.message}`);
+
+  console.log(
+    `\n  ✓ Invite link, valid once, until ${expires.toISOString().slice(0, 10)}:\n\n` +
+      `    ${base.origin}/admin/invite#token=${token}\n\n` +
+      "    Whoever opens it first can create an admin login. Send it privately.\n",
+  );
+}
+
+async function cancelInvites() {
+  const { data, error } = await admin
+    .from("admin_invites")
+    .delete()
+    .is("used_at", null)
+    .select("id");
+  if (error) fail(`Could not cancel invites: ${error.message}`);
+  console.log(`\n  ✓ Cancelled ${data.length} unused invite ${data.length === 1 ? "link" : "links"}.\n`);
+}
+
 const [first, second] = argv;
 
 if (!first || first === "--help" || first === "-h") {
@@ -147,13 +194,20 @@ if (!first || first === "--help" || first === "-h") {
     "\n  Usage:\n" +
       "    bun run scripts/create-admin.ts <email> [password]   create or promote\n" +
       "    bun run scripts/create-admin.ts --list               show users and roles\n" +
-      "    bun run scripts/create-admin.ts --revoke <email>     remove admin\n",
+      "    bun run scripts/create-admin.ts --revoke <email>     remove admin\n" +
+      "    bun run scripts/create-admin.ts --invite <site-url>  one-time signup link\n" +
+      "    bun run scripts/create-admin.ts --cancel-invites     kill unused links\n",
   );
   process.exit(first ? 0 : 1);
 }
 
 if (first === "--list") {
   await listAdmins();
+} else if (first === "--invite") {
+  if (!second) fail("--invite needs the site address, e.g. --invite https://cw-carrental.com");
+  await invite(second);
+} else if (first === "--cancel-invites") {
+  await cancelInvites();
 } else if (first === "--revoke") {
   if (!second) fail("--revoke needs an email address.");
   await revoke(second);
