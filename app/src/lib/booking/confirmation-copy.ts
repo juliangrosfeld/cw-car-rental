@@ -16,7 +16,7 @@
  * Plain strings, no JSX: this is imported by the browser and will be by the
  * server-side email. Keep rendered copy free of em dashes.
  */
-import { MIN_AGE_NOTE } from "../../content/rental-info";
+import { INSURANCE, MIN_AGE_NOTE } from "../../content/rental-info";
 import { formatMoney } from "../money";
 import type { BookingStatus, PaymentStatus } from "../supabase/types";
 import { fmtDay, fmtTime, fromKey, type RentalType } from "./rental";
@@ -48,7 +48,10 @@ export const FULL_PRICE_NOTE = "This is the full price. Nothing is added at pick
 
 /** Conditions worth repeating once the booking exists. Printed under the facts
  *  on the confirmation screen AND in the confirmation email, in this order. */
-export const CONFIRMATION_NOTES: readonly string[] = [`${MIN_AGE_NOTE}.`];
+export const CONFIRMATION_NOTES: readonly string[] = [
+  `${MIN_AGE_NOTE}.`,
+  `${INSURANCE.heading}: ${INSURANCE.summary}`,
+];
 
 export function firstName(fullName: string): string {
   return fullName.trim().split(/\s+/)[0] || "friend";

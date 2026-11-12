@@ -45,6 +45,7 @@ import { MIN_AGE_NOTE } from '../../content/rental-info'
 import { TERMS_ACCEPT_LABEL, TERMS_LINK_LABEL } from '../../content/legal/terms'
 import { CURRENCY_CODE } from '../../lib/money'
 import { supabase } from '../../lib/supabase/client'
+import InsuranceInfo from '../site/insurance-info'
 import Calendar from './calendar'
 
 /**
@@ -1533,6 +1534,10 @@ function ReviewStep({
           </p>
         )}
       </div>
+
+      {/* Insurance, in the same words as the fleet section, before the guest
+          accepts the terms that contain it. */}
+      <InsuranceInfo newTab className="mt-5 !bg-cw-mint-soft !shadow-none" />
 
       {/* Required. The label text is fixed (TERMS_ACCEPT_LABEL); the link sits
           beside it rather than inside it, so tapping the link never toggles the

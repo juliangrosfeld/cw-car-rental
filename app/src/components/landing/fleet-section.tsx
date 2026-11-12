@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { motion, useMotionValue, useSpring } from 'framer-motion'
 import { FLEET, type Vehicle } from '../../content/brand'
+import InsuranceInfo from '../site/insurance-info'
 import { MIN_AGE_NOTE } from '../../content/rental-info'
 import { CURRENCY_CODE } from '../../lib/money'
 import { DISCOUNT_TIER_SUMMARY, MIN_RENTAL_DAYS } from '../../lib/booking/rental'
@@ -81,6 +82,7 @@ export default function FleetSection() {
             more? Ask us, we do monthly rates too.
           </p>
           <p className="mt-2 text-sm font-semibold text-cw-navy">{MIN_AGE_NOTE}.</p>
+          <InsuranceInfo className="mx-auto mt-6 max-w-[640px]" />
         </div>
 
         <div className="mx-auto mt-16 grid max-w-[960px] gap-6 md:grid-cols-2">
