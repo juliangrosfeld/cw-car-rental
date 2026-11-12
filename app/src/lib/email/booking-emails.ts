@@ -20,6 +20,7 @@
 import { WHATSAPP_URL } from "../../content/brand";
 import type { BookingConfirmation } from "../booking/availability.server";
 import {
+  CONFIRMATION_NOTES,
   FULL_PRICE_NOTE,
   bookingReference,
   confirmationCopy,
@@ -130,6 +131,9 @@ export function renderGuestConfirmation(c: BookingConfirmation): RenderedEmail {
 ${rowsHtml(rows)}
 </table>
 <p style="margin:20px 0 0;padding:14px 16px;background:${MINT_SOFT};border-radius:12px;font-size:13px;color:${INK};">${esc(FULL_PRICE_NOTE)}</p>
+${CONFIRMATION_NOTES.map(
+  (note) => `<p style="margin:10px 0 0;font-size:13px;color:${INK};">${esc(note)}</p>`,
+).join("\n")}
 <p style="margin:24px 0 16px;font-size:14px;">${esc(copy.contact)}</p>
 <a href="${esc(whatsapp)}" style="display:inline-block;padding:12px 22px;border-radius:12px;background:${TEAL};color:#ffffff;font-weight:700;text-decoration:none;">Message us on WhatsApp</a>`,
   );
@@ -142,6 +146,7 @@ ${rowsHtml(rows)}
     rowsText(rows),
     "",
     FULL_PRICE_NOTE,
+    ...CONFIRMATION_NOTES,
     "",
     copy.contact,
     `WhatsApp: ${whatsapp}`,

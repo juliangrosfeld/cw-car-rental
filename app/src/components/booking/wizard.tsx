@@ -35,11 +35,13 @@ import {
   type RentalType,
 } from '../../lib/booking/rental'
 import {
+  CONFIRMATION_NOTES,
   FULL_PRICE_NOTE,
   bookingReference,
   confirmationCopy,
   confirmationRows,
 } from '../../lib/booking/confirmation-copy'
+import { MIN_AGE_NOTE } from '../../content/rental-info'
 import { TERMS_ACCEPT_LABEL, TERMS_LINK_LABEL } from '../../content/legal/terms'
 import { CURRENCY_CODE } from '../../lib/money'
 import { supabase } from '../../lib/supabase/client'
@@ -1322,6 +1324,9 @@ function DetailsStep({
         <p className="mt-1.5 text-sm text-cw-ink/70">
           We check it at handover. Sending it now means the keys are ready when you arrive.
         </p>
+        <p className="mt-3 inline-block rounded-full bg-cw-yellow-soft px-3.5 py-1.5 text-sm font-semibold text-cw-navy">
+          {MIN_AGE_NOTE}
+        </p>
         {/* grid-cols-1, not the implicit column: a date input's intrinsic width
             would otherwise stretch an `auto` track past the card on phones. */}
         <div className="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2">
@@ -1733,6 +1738,12 @@ function Confirmation({ confirmation: c }: { confirmation: Confirmed }) {
 
       {/* No "a copy is in your inbox" here: nothing sends one yet. Pointing at
           the reference is the honest version until it does. */}
+      <ul className="mx-auto mt-6 max-w-[26rem] space-y-1 rounded-xl bg-cw-mint-soft px-4 py-3 text-left text-sm text-cw-ink/80">
+        {CONFIRMATION_NOTES.map((note) => (
+          <li key={note}>{note}</li>
+        ))}
+      </ul>
+
       <p className="mt-6 text-sm text-cw-ink/70">{copy.contact}</p>
       <a
         href={`${WHATSAPP_URL}?text=${encodeURIComponent(`Hi CW! About my reservation ${reference}`)}`}
